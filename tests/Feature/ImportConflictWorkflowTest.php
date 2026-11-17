@@ -6,6 +6,7 @@ use App\Exceptions\LotAllocationConflict;
 use App\Models\BiCheck;
 use App\Models\Booking;
 use App\Models\BookingAudit;
+use App\Models\BookingTransition;
 use App\Models\Branch;
 use App\Models\Buyer;
 use App\Models\ImportConflict;
@@ -82,6 +83,41 @@ class ImportConflictWorkflowTest extends TestCase
         } catch (LotAllocationConflict) {
             $this->assertTrue(true);
         }
+    }
+
+    public function test_transfer_into_lot_with_unresolved_allocation_dispute_is_rejected(): void
+    {
+        [$project, $admin] = $this->scenario();
+        $sourceLot = Lot::query()->create([
+            'project_id' => $project->id,
+            'code' => 'TRANSFER-SOURCE',
+            'source_key' => 'LOT:TRANSFER-SOURCE',
+        ]);
+        $source = $this->booking($project, $sourceLot, 'transfer-source', true);
+        $destination = Lot::query()->create([
+            'project_id' => $project->id,
+            'code' => 'BLOCKED-DEST',
+            'source_key' => 'LOT:BLOCKED-DEST',
+        ]);
+        $this->allocationConflict($project, $destination, ImportConflict::CASE_STOCK_DISAGREEMENT, []);
+
+        $before = Booking::query()->where('project_id', $project->id)->count();
+        try {
+            app(PsjbWorkflow::class)->moveLot($admin, $source, [
+                'lot_id' => $destination->id,
+                'effective_date' => '2026-11-17',
+                'reason' => 'Should be blocked',
+                'idempotency_key' => 'blocked-destination-'.uniqid(),
+            ]);
+            $this->fail('Expected blocked destination to be rejected.');
+        } catch (HttpException $exception) {
+            $this->assertSame(409, $exception->getStatusCode());
+        }
+
+        $this->assertSame($before, Booking::query()->where('project_id', $project->id)->count());
+        $this->assertSame($source->lot_id, $source->fresh()->lot_id);
+        $this->assertTrue($source->fresh()->is_current_holder);
+        $this->assertSame(0, BookingTransition::query()->where('source_booking_id', $source->id)->count());
     }
 
     public function test_stock_disagreement_also_blocks_its_lot(): void

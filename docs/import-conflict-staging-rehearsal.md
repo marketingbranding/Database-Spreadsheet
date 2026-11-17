@@ -118,12 +118,72 @@ disabled again and `.env` restored to `APP_ENV=local`.
 7. Signed PPJB/Akad/BAST changes remain escalation-only; no automatic
    two-system reconciliation is implemented.
 
+## Staging admin pilot readiness
+
+Designated pilot roles are the existing active users
+`jepara@marison.test` (branch admin, PRJ-JPR-KWS only) and
+`magelang@marison.test` (branch admin, PRJ-MGL-KLG only). HQ is
+`hq@marison.test`. No new roles were added.
+
+Blocked lots are exactly the lots referenced by unresolved `COMPETING_CLAIMS`
+or `STOCK_DISAGREEMENT` conflicts:
+
+| Project | Lot | Reason |
+|---|---|---|
+| PRJ-JPR-KWS | G09 | Legacy cycle conflict: booking 1480 completed/BAST and booking 1598 withdrawn; one current holder, lot SOLD. |
+| PRJ-JPR-KWS | M22 | Two open claims: booking 1567 `NEEDS_REVIEW` (current) and 1601 `ACTIVE`; lot BOOKED. |
+| PRJ-JPR-KWS | L02 | HQ says PEMBERKASAN, Laravel derives AVAILABLE; only replaced booking 1557. |
+| PRJ-JPR-KWS | M20 | HQ says PEMBERKASAN, Laravel derives AVAILABLE; only replaced booking 1565. |
+| PRJ-MGL-KLG | D07 | Historical PINDAH KAVLING/GANTI NAMA chain ends with no valid current claim; lot AVAILABLE. |
+| PRJ-MGL-KLG | G03 | Historical PINDAH KAVLING chain ends with no valid current claim; lot AVAILABLE. |
+| PRJ-MGL-KLG | G05 | Historical link mismatch, but booking 1616 is `ACTIVE` current holder; lot BOOKED. |
+| PRJ-MGL-KLG | G16 | Historical link mismatch, but booking 1626 is `ACTIVE` current holder; lot BOOKED. |
+| PRJ-MGL-KLG | H07 | HQ BELUM_TERJUAL, Laravel BOOKED; booking 1804 is active. |
+| PRJ-MGL-KLG | H11 | HQ BELUM_TERJUAL, Laravel BOOKED; booking 1608 is active. |
+
+Transfer-link review:
+
+- **D07**: booking 1634 is `MOVED` with predecessor 1633 (`GANTI_NAMA`); no
+  valid claim remains. The mismatch affects current availability and keeps D07
+  blocked until HQ decides whether the lot is genuinely available.
+- **G03**: booking 1639 is `MOVED` with predecessor 1660; bookings 1660 and
+  1662 are `MUNDUR`. No valid claim remains. The mismatch affects current
+  availability and keeps G03 blocked.
+- **G05**: mismatch is on moved booking 1652; booking 1616 is the sole active
+  holder. Current allocation is already represented and the lot is BOOKED; the
+  mismatch is historical for allocation purposes.
+- **G16**: mismatch is on moved booking 1658; booking 1626 is the sole active
+  holder. Current allocation is already represented and the lot is BOOKED; the
+  mismatch is historical for allocation purposes.
+
+Role rehearsal with the actual pilot users (rolled back):
+
+- JPR admin can access only PRJ-JPR-KWS; MGL admin only PRJ-MGL-KLG; HQ both.
+- Each branch admin created a booking on an unaffected lot (B01 / A01).
+- Creating into a blocked lot (L02 / D07) was rejected.
+- Transferring into a blocked lot (L02 / D07) was rejected after the
+  destination guard fix; this rehearsal exposed and corrected the gap.
+- Branch admins submitted `CONFIRM_LARAVEL` proposals for their assigned
+  project; HQ approved one and rejected the other. A cross-project proposal was
+  denied.
+- Bank conflict 16 (F15 source key, D14 source row, booking 1612) accepted only
+  a `ROUTE_BOOKING_DECISION` proposal. HQ approval left the booking ACTIVE and
+  the conflict not resolved; no MUNDUR/BATAL decision can be applied through
+  the conflict module before the key, row, and exact booking are reconciled.
+
+All rehearsal writes were rolled back. Real conflicts remained 18 OPEN, with 0
+proposals and 0 audits; booking count and max ID were unchanged.
+
 ## Rollback
 
-- Disable `MARISON_IMPORT_CONFLICTS_ENABLED` and leave the migration in place.
-- Do not delete conflict, proposal, or event history.
-- Applied booking corrections are reversed only through a new approved domain
-  action.
-- If projection must be redone, clear only pilot conflict/proposal/event rows;
-  never delete bookings, documents, or audits.
+- Disabling `MARISON_IMPORT_CONFLICTS_ENABLED` hides the UI only. It must not
+  delete or reset real conflict, proposal, event, or `booking_audit` history.
+- Leave the migration in place. Applied booking corrections are reversed only
+  through a new approved domain action, never by deleting audit records.
+- Re-projection is fingerprint-aware and reuses unchanged conflicts. Do not
+  clear pilot conflict/proposal/event rows as a routine rollback step.
+- Cleanup is limited to explicitly identified rehearsal fixtures: temporary
+  users, proposals/events created for `pilot-*` or `rehearsal-*` idempotency
+  keys, and conflicts created solely from fixture data. List the exact IDs and
+  keys before deletion; real source-derived conflicts stay open for HQ.
 - Production cutover and scheduled imports remain out of scope.

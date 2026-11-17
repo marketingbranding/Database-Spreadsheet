@@ -222,6 +222,9 @@ class PsjbWorkflow
                 if ($this->validClaimQuery($destinationLot->id)->exists()) {
                     throw new HttpException(409, 'Kavling tujuan sudah dialokasikan.');
                 }
+                if (ImportConflict::openAllocationDisputesForLot($project->id, $destinationLot->id)->exists()) {
+                    throw new HttpException(409, 'Kavling tujuan memiliki konflik alokasi yang belum selesai.');
+                }
             }
 
             $sourcePsjb = PsjbRecord::query()->where('booking_id', $source->id)->lockForUpdate()->first();
