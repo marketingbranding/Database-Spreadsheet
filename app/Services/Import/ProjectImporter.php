@@ -79,8 +79,14 @@ class ProjectImporter
     /** @var array<int, bool> */
     private array $laravelAkadBookingIds = [];
 
+    /** @var array<int, bool> */
+    private array $laravelBastBookingIds = [];
+
     /** @var array<string, bool> */
     private array $protectedAkadBookings = [];
+
+    /** @var array<string, bool> */
+    private array $protectedBastBookings = [];
 
     /** @var array<string, bool> */
     private array $protectedPpjbBookings = [];
@@ -164,6 +170,14 @@ class ProjectImporter
                 AkadRecord::query()
                     ->where('project_id', $project->id)
                     ->where('source_owner', AkadRecord::OWNER_LARAVEL)
+                    ->pluck('booking_id')
+                    ->all(),
+                true
+            );
+            $this->laravelBastBookingIds = array_fill_keys(
+                BastRecord::query()
+                    ->where('project_id', $project->id)
+                    ->where('source_owner', BastRecord::OWNER_LARAVEL)
                     ->pluck('booking_id')
                     ->all(),
                 true
@@ -263,6 +277,8 @@ class ProjectImporter
         $this->laravelPpjbBookingIds = [];
         $this->protectedAkadBookings = [];
         $this->laravelAkadBookingIds = [];
+        $this->protectedBastBookings = [];
+        $this->laravelBastBookingIds = [];
         $this->lots = [];
         $this->buyersByName = [];
         $this->buyersBySourceId = [];
@@ -1142,17 +1158,45 @@ class ProjectImporter
                 continue;
             }
 
+            $bookingId = $this->bookingRows[$bookingKey]['booking']->id;
+            $akadReference = $reference ?: $tab->text($row, ['Pilih Akad']);
+            $akad = $akadReference
+                ? AkadRecord::query()
+                    ->where('booking_id', $bookingId)
+                    ->where('project_id', $this->project->id)
+                    ->where(function ($query) use ($akadReference): void {
+                        $query->where('akad_number', $akadReference)
+                            ->orWhere('source_key', 'AKAD:' . $akadReference);
+                    })
+                    ->first()
+                : null;
+
             $attributes = [
-                'booking_id' => $this->bookingRows[$bookingKey]['booking']->id,
+                'booking_id' => $bookingId,
+                'akad_id' => $akad?->id,
                 'project_id' => $this->project->id,
                 'source_key' => 'BAST:' . $number,
                 'bast_number' => $number,
                 'bast_date' => $date,
                 'notes' => $tab->text($row, ['Keterangan']),
+                'source_owner' => BastRecord::OWNER_SHEETS,
                 'source_tab' => 'BAST',
                 'source_row' => $rowNumber,
                 'source_hash' => $this->hashRow($row),
             ];
+
+            $protected = $this->project->management_mode === Project::MANAGEMENT_LARAVEL
+                && isset($this->laravelBastBookingIds[$bookingId]);
+            if ($protected) {
+                $laravelRow = BastRecord::query()
+                    ->where('booking_id', $bookingId)
+                    ->where('source_owner', BastRecord::OWNER_LARAVEL)
+                    ->first();
+                $this->reportBastConflict($laravelRow, $attributes, 'BAST', $rowNumber, $number);
+                $this->protectedBastBookings[$bookingKey] = true;
+                continue;
+            }
+
             $this->upsert(BastRecord::class, $attributes['source_key'], $attributes, 'bast_records');
             $this->recordEvent($bookingKey, 'BAST', $date, [
                 'withdrawn' => false,
@@ -1401,7 +1445,8 @@ class ProjectImporter
             $bookingProtected = isset($this->protectedBookings[$key])
                 || isset($this->protectedBankBookings[$key])
                 || isset($this->protectedPpjbBookings[$key])
-                || isset($this->protectedAkadBookings[$key]);
+                || isset($this->protectedAkadBookings[$key])
+                || isset($this->protectedBastBookings[$key]);
             $effectiveStatus = $bookingProtected
                 ? $info['booking']->status
                 : $status;
@@ -1830,6 +1875,34 @@ class ProjectImporter
 
         if ($differences !== []) {
             $this->issue('warning', 'import_conflict', 'Laravel-owned Akad differs from Sheets. Database values were preserved.', $tab, $row, $sourceKey, ['fields' => array_keys($differences), 'values' => $differences]);
+        }
+    }
+
+    private function reportBastConflict(?BastRecord $record, array $source, string $tab, int $row, string $sourceKey): void
+    {
+        if (! $record) {
+            return;
+        }
+
+        $fields = ['booking_id', 'project_id', 'akad_id', 'bast_number', 'bast_date', 'notes'];
+        $differences = [];
+        foreach ($fields as $field) {
+            if (! array_key_exists($field, $source)) {
+                continue;
+            }
+            $current = $record->getAttribute($field);
+            $incoming = $source[$field];
+            if ($this->comparableConflictValue($current) === $this->comparableConflictValue($incoming)) {
+                continue;
+            }
+            $differences[$field] = [
+                'current' => $this->safeConflictValue($current),
+                'source' => $this->safeConflictValue($incoming),
+            ];
+        }
+
+        if ($differences !== []) {
+            $this->issue('warning', 'import_conflict', 'Laravel-owned BAST differs from Sheets. Database values were preserved.', $tab, $row, $sourceKey, ['fields' => array_keys($differences), 'values' => $differences]);
         }
     }
 
