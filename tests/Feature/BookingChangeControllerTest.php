@@ -6,6 +6,7 @@ use App\Models\Booking;
 use App\Models\Branch;
 use App\Models\Buyer;
 use App\Models\Lot;
+use App\Models\PpjbRecord;
 use App\Models\Project;
 use App\Models\PsjbRecord;
 use App\Models\User;
@@ -85,6 +86,23 @@ class BookingChangeControllerTest extends TestCase
             ->assertForbidden();
         $this->assertNotSame($project->id, $otherProject->id);
         $this->assertSame(Booking::STATUS_ACTIVE, $otherBooking->fresh()->status);
+    }
+
+    public function test_signed_document_form_url_is_rejected_before_rendering(): void
+    {
+        [$project, $admin, $booking] = $this->scenario('signed');
+        PpjbRecord::query()->create([
+            'booking_id' => $booking->id,
+            'project_id' => $project->id,
+            'source_key' => 'PPJB:controller-signed-'.uniqid(),
+            'ppjb_number' => 'PPJB-CONTROLLER-SIGNED',
+            'signed_date' => '2026-11-18',
+            'source_owner' => PpjbRecord::OWNER_LARAVEL,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('bookings.change-name.create', [$project, $booking]))
+            ->assertStatus(422);
     }
 
     private function scenario(string $suffix = 'default'): array

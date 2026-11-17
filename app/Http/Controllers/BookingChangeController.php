@@ -84,5 +84,7 @@ class BookingChangeController extends Controller
         );
         abort_unless(config('app.env') === 'staging' && filter_var(env('MARISON_OPERATIONAL_WRITES', false), FILTER_VALIDATE_BOOL), 403, 'Operational writes are disabled outside staging.');
         abort_unless($project->management_mode === Project::MANAGEMENT_LARAVEL, 422, 'Project masih dikelola melalui Sheets.');
+        $booking->loadMissing(['ppjb', 'akad', 'bast']);
+        abort_unless(! $booking->ppjb && ! $booking->akad && ! $booking->bast, 422, 'Perubahan setelah dokumen ditandatangani masih dikelola melalui Sheets.');
     }
 }
