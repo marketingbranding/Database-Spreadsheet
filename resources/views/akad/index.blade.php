@@ -24,7 +24,7 @@
                         <td>{{ $booking->buyer?->name }}</td>
                         <td><span class="badge">{{ $booking->payment_method }}</span></td>
                         <td>{{ $booking->ppjb?->ppjb_number }} · {{ $booking->ppjb?->signed_date?->format('d M Y') ?? '—' }}</td>
-                        <td><a class="btn btn--small" href="{{ route('akad.create', [$project, $booking]) }}">Input Akad</a></td>
+                        <td><a class="btn btn--small" href="{{ route('akad.create', [$project, $booking]) }}">Catat Akad</a></td>
                     </tr>
                 @endforeach
                 </tbody>

@@ -24,10 +24,29 @@
         @csrf
         <input type="hidden" name="ppjb_id" value="{{ $booking->ppjb?->id }}">
         <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key', (string) \Illuminate\Support\Str::uuid()) }}">
-        <label class="auth-field"><span>No. Akad *</span><input class="input" name="akad_number" value="{{ old('akad_number') }}" maxlength="96" required></label>
-        <label class="auth-field"><span>Tanggal Akad *</span><input class="input" type="date" name="akad_date" value="{{ old('akad_date', now()->toDateString()) }}" required></label>
-        <label class="auth-field"><span>Kualitas Akad *</span><input class="input" name="quality" value="{{ old('quality') }}" maxlength="64" required></label>
-        <label class="auth-field form-grid__wide"><span>Catatan</span><textarea class="input" name="notes" rows="4" maxlength="2000">{{ old('notes') }}</textarea></label>
+        <label class="auth-field">
+            <span>No. Akad *</span>
+            <input class="input" name="akad_number" value="{{ old('akad_number') }}" maxlength="96" required>
+            @error('akad_number')<span class="field-error" role="alert">{{ $message }}</span>@enderror
+        </label>
+        <label class="auth-field">
+            <span>Tanggal Akad Aktual *</span>
+            <input class="input" type="date" name="akad_date" value="{{ old('akad_date', now()->toDateString()) }}" required>
+            <small class="field-hint">Berbeda dari tanggal TTD PPJB: {{ $booking->ppjb?->signed_date?->format('d M Y') ?? '—' }}</small>
+            @error('akad_date')<span class="field-error" role="alert">{{ $message }}</span>@enderror
+        </label>
+        <label class="auth-field">
+            <span>Kualitas Akad *</span>
+            <input class="input" name="quality" value="{{ old('quality') }}" maxlength="64" required>
+            @error('quality')<span class="field-error" role="alert">{{ $message }}</span>@enderror
+        </label>
+        <label class="auth-field form-grid__wide">
+            <span>Catatan</span>
+            <textarea class="input" name="notes" rows="4" maxlength="2000">{{ old('notes') }}</textarea>
+            @error('notes')<span class="field-error" role="alert">{{ $message }}</span>@enderror
+        </label>
+        @error('ppjb_id')<p class="form-grid__wide field-error" role="alert">{{ $message }}</p>@enderror
+        @error('idempotency_key')<p class="form-grid__wide field-error" role="alert">{{ $message }}</p>@enderror
         <div class="form-grid__wide" style="display:flex;gap:.5rem;flex-wrap:wrap;">
             <button class="btn" type="submit">Simpan Akad</button>
             <a class="btn btn--secondary" href="{{ route('akad.index', $project) }}">Kembali</a>

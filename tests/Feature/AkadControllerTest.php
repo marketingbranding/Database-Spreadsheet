@@ -32,11 +32,28 @@ class AkadControllerTest extends TestCase
         $this->actingAs($admin)->get(route('akad.index', $project))
             ->assertOk()
             ->assertSee($booking->lot->code)
-            ->assertSee('Akad');
+            ->assertSee($booking->buyer->name)
+            ->assertSee($booking->payment_method)
+            ->assertSee($ppjb->signed_date->format('d M Y'))
+            ->assertSee('Catat Akad');
         $this->actingAs($admin)->get(route('akad.create', [$project, $booking]))
             ->assertOk()
             ->assertSee('name="akad_number"', false)
-            ->assertSee('PPJB');
+            ->assertSee('PPJB')
+            ->assertSee('Tanggal Akad Aktual');
+
+        $validationResponse = $this->followingRedirects()->actingAs($admin)->post(route('akad.store', [$project, $booking]), [
+            'ppjb_id' => $ppjb->id,
+            'akad_number' => 'AKD-RETAINED',
+            'akad_date' => '',
+            'quality' => '',
+            'idempotency_key' => 'akad-validation-1',
+        ]);
+        $validationResponse
+            ->assertSee('AKD-RETAINED')
+            ->assertSee('The akad date field is required.')
+            ->assertSee('The quality field is required.')
+            ->assertSee('field-error');
 
         $this->actingAs($admin)->post(route('akad.store', [$project, $booking]), [
             'ppjb_id' => $ppjb->id,
@@ -44,7 +61,8 @@ class AkadControllerTest extends TestCase
             'akad_date' => '2026-11-18',
             'quality' => 'Akad Sempurna',
             'idempotency_key' => 'akad-web-1',
-        ])->assertRedirect(route('bookings.show', $booking));
+        ])->assertRedirect(route('bookings.show', $booking))
+            ->assertSessionHas('status', 'Akad berhasil disimpan.');
 
         $this->assertDatabaseHas('akad_records', [
             'booking_id' => $booking->id,
@@ -53,6 +71,11 @@ class AkadControllerTest extends TestCase
         ]);
         $this->assertSame(Booking::STAGE_AKAD, $booking->fresh()->current_stage);
         $this->assertSame(1, BookingAudit::query()->where('booking_id', $booking->id)->where('action', BookingAudit::ACTION_AKAD_CREATED)->count());
+        $this->actingAs($admin)->get(route('bookings.show', $booking))
+            ->assertOk()
+            ->assertSee('Akad')
+            ->assertSee('18 Nov 2026')
+            ->assertSee('PPJB #'.$ppjb->id);
     }
 
     public function test_cross_project_booking_and_unauthorized_role_are_forbidden(): void
