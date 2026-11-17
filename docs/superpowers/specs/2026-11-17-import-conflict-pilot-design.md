@@ -81,7 +81,7 @@ the full approval and execution history.
   tab plus normalized business locator stored in context.
 - `case_type`: `COMPETING_CLAIMS`, `UNLINKED_BI`, `STOCK_DISAGREEMENT`,
   `BANK_REJECT`, or `SIGNED_DOCUMENT`
-- `status`: `OPEN`, `PROPOSED`, `ESCALATED`, or `RESOLVED`
+- `status`: `OPEN`, `PROPOSED`, `ESCALATED`, `SUPERSEDED`, or `RESOLVED`
 - `source_tab`, `source_row`, `source_key`
 - `source_fingerprint`: SHA-256 of a canonical allowlisted source snapshot
 - `reviewed_source_fingerprint` nullable
@@ -152,7 +152,8 @@ differences rather than existing `ImportIssue` codes.
    and mark that batch's regenerated `ImportIssue` resolved so dashboard open
    counts do not contradict the durable decision.
 5. If the source fingerprint materially changes, create a new open review
-   linked to the prior conflict. The prior decision and events remain intact.
+   linked to the prior conflict. Mark an unresolved prior version
+   `SUPERSEDED`; the prior decision and events remain intact.
 6. For an applied Laravel correction, existing importer ownership guards
    continue preserving Laravel-owned records. An unchanged source row does not
    reopen the conflict; a materially changed fingerprint does.
@@ -322,8 +323,10 @@ Evidence and reason are length-limited and rendered through Blade escaping.
 7. Verify PPJB/Akad/BAST IDs and links before and after escalation.
 
 The pilot UI is enabled only in staging with operational writes enabled and only
-for the two pilot project codes. Production cutover and scheduled imports remain
-out of scope.
+for the two pilot project codes. A separate
+`MARISON_IMPORT_CONFLICTS_ENABLED` feature gate remains false until the
+projection command and staging rehearsal succeed. Production cutover and
+scheduled imports remain out of scope.
 
 ## Rollback
 
