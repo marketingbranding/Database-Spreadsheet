@@ -15,6 +15,7 @@
             <a class="btn btn--secondary" href="{{ route('pemberkasan.index', $project) }}">Pemberkasan</a>
             <a class="btn btn--secondary" href="{{ route('bank.index', $project) }}">Proses Bank</a>
             <a class="btn btn--secondary" href="{{ route('ppjb.index', $project) }}">TTD PPJB</a>
+            <a class="btn btn--secondary" href="{{ route('akad.index', $project) }}">Akad</a>
         @endif
         @if (auth()->user()->role === 'branch_admin' && config('app.env') === 'staging' && filter_var(env('MARISON_OPERATIONAL_WRITES', false), FILTER_VALIDATE_BOOL))
             <a class="btn" href="{{ route('psjb.create', $project) }}">Buat PSJB</a>

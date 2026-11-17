@@ -28,6 +28,7 @@
                     @if (request()->route('project') instanceof \App\Models\Project && request()->route('project')->management_mode === \App\Models\Project::MANAGEMENT_LARAVEL && in_array(request()->route('project')->code, ['PRJ-JPR-KWS', 'PRJ-MGL-KLG'], true))
                         <a href="{{ route('bank.index', request()->route('project')) }}" @class(['active' => request()->routeIs('bank.*')])>Proses Bank</a>
                         <a href="{{ route('ppjb.index', request()->route('project')) }}" @class(['active' => request()->routeIs('ppjb.*')])>TTD PPJB</a>
+                        <a href="{{ route('akad.index', request()->route('project')) }}" @class(['active' => request()->routeIs('akad.*')])>Akad</a>
                     @endif
                 @endif
                 <a href="{{ route('reconciliation.index') }}" @class(['active' => request()->routeIs('reconciliation.*')])>Rekonsiliasi</a>
