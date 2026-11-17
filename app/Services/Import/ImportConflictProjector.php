@@ -71,7 +71,19 @@ class ImportConflictProjector
      */
     public function persistCurrent(Project $project, array $issues, array $rawTabs, array $hqPositions): void
     {
-        foreach ($this->preview($project, $issues, $rawTabs, $hqPositions) as $descriptor) {
+        $descriptors = $this->preview($project, $issues, $rawTabs, $hqPositions);
+        $projectedIdentities = [];
+
+        foreach ($descriptors as $descriptor) {
+            $projectedIdentities[] = $descriptor['stable_source_identity'];
+            $prior = ImportConflict::query()
+                ->where('project_id', $project->id)
+                ->where('stable_source_identity', $descriptor['stable_source_identity'])
+                ->where('source_fingerprint', '!=', $descriptor['source_fingerprint'])
+                ->latest('id')
+                ->lockForUpdate()
+                ->first();
+
             $conflict = ImportConflict::query()->firstOrCreate(
                 [
                     'project_id' => $project->id,
@@ -89,8 +101,29 @@ class ImportConflictProjector
                     'source_value',
                     'laravel_value',
                     'inventory_impact',
-                ])
+                ]) + ['supersedes_conflict_id' => $prior?->id]
             );
+
+            if ($prior && in_array($prior->status, [
+                ImportConflict::STATUS_OPEN,
+                ImportConflict::STATUS_PROPOSED,
+                ImportConflict::STATUS_ESCALATED,
+            ], true)) {
+                $before = ['status' => $prior->status, 'source_fingerprint' => $prior->source_fingerprint];
+                $prior->update(['status' => ImportConflict::STATUS_SUPERSEDED]);
+                ImportConflictEvent::query()->create([
+                    'import_conflict_id' => $prior->id,
+                    'event_type' => ImportConflictEvent::TYPE_SOURCE_CHANGED,
+                    'reason' => 'Material source values changed; a successor review was opened.',
+                    'source_reference' => $this->sourceReference($descriptor),
+                    'source_fingerprint' => $descriptor['source_fingerprint'],
+                    'before' => $before,
+                    'after' => [
+                        'status' => ImportConflict::STATUS_SUPERSEDED,
+                        'successor_conflict_id' => $conflict->id,
+                    ],
+                ]);
+            }
 
             if (! $conflict->wasRecentlyCreated) {
                 $conflict->fill(Arr::only($descriptor, [
@@ -103,6 +136,16 @@ class ImportConflictProjector
                     'laravel_value',
                     'inventory_impact',
                 ]))->save();
+            }
+
+            if (
+                $conflict->status === ImportConflict::STATUS_RESOLVED
+                && $conflict->reviewed_source_fingerprint === $descriptor['source_fingerprint']
+                && $descriptor['current_import_issue_id']
+            ) {
+                ImportIssue::query()
+                    ->whereKey($descriptor['current_import_issue_id'])
+                    ->update(['resolved_at' => now()]);
             }
 
             $conflict->lots()->syncWithoutDetaching($descriptor['lot_ids']);
@@ -126,6 +169,8 @@ class ImportConflictProjector
                 ],
             ]);
         }
+
+        $this->reconcileBookingDecisionConflicts($project, $projectedIdentities);
     }
 
     public function fingerprint(string $caseType, array $sourceValue): string
@@ -483,6 +528,13 @@ class ImportConflictProjector
             return array_map(fn ($item) => $this->normalizeFingerprintValue($item), $value);
         }
         if (is_string($value)) {
+            if (preg_match('/\d.*(?:jan|feb|mar|apr|mei|jun|jul|agu|agt|sep|okt|nov|des|january|february|march|april|may|june|july|august|september|october|november|december|[-\/]).*\d/iu', $value)) {
+                $date = Normalizer::date($value);
+                if ($date) {
+                    return $date->toDateString();
+                }
+            }
+
             return Str::lower(preg_replace('/\s+/u', ' ', trim($value)) ?? trim($value));
         }
 
@@ -495,5 +547,57 @@ class ImportConflictProjector
     private function sourceReference(array $descriptor): string
     {
         return ($descriptor['source_tab'] ?? 'unknown').':'.($descriptor['source_row'] ?? 'n/a');
+    }
+
+    /**
+     * @param  array<int, string>  $projectedIdentities
+     */
+    private function reconcileBookingDecisionConflicts(Project $project, array $projectedIdentities): void
+    {
+        $conflicts = ImportConflict::query()
+            ->where('project_id', $project->id)
+            ->where('case_type', ImportConflict::CASE_BANK_REJECT)
+            ->whereIn('status', [
+                ImportConflict::STATUS_OPEN,
+                ImportConflict::STATUS_PROPOSED,
+                ImportConflict::STATUS_ESCALATED,
+            ])
+            ->when($projectedIdentities !== [], fn ($query) => $query->whereNotIn('stable_source_identity', $projectedIdentities))
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($conflicts as $conflict) {
+            $booking = $this->bookingForSource($project, $conflict->source_key);
+            if (! $booking || ! in_array($booking->status, [
+                Booking::STATUS_MUNDUR,
+                Booking::STATUS_BATAL,
+            ], true)) {
+                continue;
+            }
+
+            $before = [
+                'status' => $conflict->status,
+                'booking_id' => $booking->id,
+                'booking_status' => $booking->status,
+            ];
+            $conflict->update([
+                'status' => ImportConflict::STATUS_RESOLVED,
+                'resolution_type' => ImportConflict::RESOLUTION_BOOKING_DECISION,
+                'reviewed_source_fingerprint' => $conflict->source_fingerprint,
+                'resolved_at' => now(),
+            ]);
+            ImportConflictEvent::query()->create([
+                'import_conflict_id' => $conflict->id,
+                'event_type' => ImportConflictEvent::TYPE_BOOKING_DECISION_RESOLVED,
+                'reason' => 'Resolved through the existing booking decision workflow.',
+                'source_reference' => $conflict->source_tab.':'.($conflict->source_row ?? 'n/a'),
+                'source_fingerprint' => $conflict->source_fingerprint,
+                'before' => $before,
+                'after' => [
+                    'status' => ImportConflict::STATUS_RESOLVED,
+                    'resolution_type' => ImportConflict::RESOLUTION_BOOKING_DECISION,
+                ],
+            ]);
+        }
     }
 }
