@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Support\Normalizer;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -279,73 +280,117 @@ class PsjbWorkflow
         $project = Project::query()->whereKey($booking->project_id)->firstOrFail();
         $this->authorizeBankWrite($actor, $project);
 
-        return DB::transaction(function () use ($actor, $booking, $pemberkasan, $project, $bank, $bankUnit, $submittedDate, $notes, $idempotencyKey): BankSubmission {
-            $project = Project::query()->whereKey($project->id)->lockForUpdate()->firstOrFail();
-            $this->authorizeBankWrite($actor, $project);
+        try {
+            return DB::transaction(function () use ($actor, $booking, $pemberkasan, $project, $bank, $bankUnit, $submittedDate, $notes, $idempotencyKey): BankSubmission {
+                $project = Project::query()->whereKey($project->id)->lockForUpdate()->firstOrFail();
+                $this->authorizeBankWrite($actor, $project);
 
-            $booking = Booking::query()->whereKey($booking->id)->lockForUpdate()->firstOrFail();
-            Lot::query()->whereKey($booking->lot_id)->lockForUpdate()->firstOrFail();
-            $pemberkasan = PemberkasanRecord::query()->whereKey($pemberkasan->id)->lockForUpdate()->firstOrFail();
+                $booking = Booking::query()->whereKey($booking->id)->lockForUpdate()->firstOrFail();
+                Lot::query()->whereKey($booking->lot_id)->lockForUpdate()->firstOrFail();
+                $pemberkasan = PemberkasanRecord::query()->whereKey($pemberkasan->id)->lockForUpdate()->firstOrFail();
 
-            $fingerprint = $this->bankFingerprint(
-                $booking->id,
-                $pemberkasan->id,
-                $bank,
-                $bankUnit,
-                $submittedDate,
-                $notes,
-            );
-            $existing = BankSubmission::query()->where('idempotency_key', $idempotencyKey)->lockForUpdate()->first();
-            if ($existing) {
-                if (! hash_equals((string) $existing->source_hash, $fingerprint)) {
-                    throw new HttpException(409, 'Kunci idempotensi sudah dipakai untuk permintaan berbeda.');
+                $fingerprint = $this->bankFingerprint(
+                    $booking->id,
+                    $pemberkasan->id,
+                    $bank,
+                    $bankUnit,
+                    $submittedDate,
+                    $notes,
+                );
+                $existing = BankSubmission::query()->where('idempotency_key', $idempotencyKey)->lockForUpdate()->first();
+                if ($existing) {
+                    return $this->resolveBankSubmissionReplay($existing, $fingerprint);
                 }
 
-                return $existing->fresh(['booking', 'pemberkasan']);
+                $this->assertBankSubmissionEligible($booking, $pemberkasan, $project);
+
+                $before = BookingAudit::snapshot($booking);
+                $submission = BankSubmission::query()->create([
+                    'booking_id' => $booking->id,
+                    'project_id' => $project->id,
+                    'pemberkasan_id' => $pemberkasan->id,
+                    'source_key' => 'LARAVEL:BANK:' . (string) Str::uuid(),
+                    'file_number' => $pemberkasan->file_number,
+                    'submission_sequence' => (int) BankSubmission::query()->where('booking_id', $booking->id)->max('submission_sequence') + 1,
+                    'bank' => $bank,
+                    'bank_unit' => $bankUnit,
+                    'submitted_date' => $submittedDate,
+                    'result' => null,
+                    'approved_amount' => null,
+                    'tenor' => null,
+                    'withdrawn_flag' => false,
+                    'cancelled_flag' => false,
+                    'moved_lot_flag' => false,
+                    'name_change_flag' => false,
+                    'notes' => $notes,
+                    'source_owner' => BankSubmission::OWNER_LARAVEL,
+                    'idempotency_key' => $idempotencyKey,
+                    'source_tab' => 'Laravel',
+                    'source_hash' => $fingerprint,
+                ]);
+
+                $booking->update([
+                    'current_stage' => Booking::STAGE_BANK,
+                    'source_owner' => Booking::OWNER_LARAVEL,
+                ]);
+                BookingAudit::record(
+                    $booking->fresh(),
+                    $actor,
+                    BookingAudit::ACTION_BANK_SUBMISSION_CREATED,
+                    $before,
+                    BookingAudit::snapshot($booking->fresh()),
+                    $this->requestId(),
+                );
+
+                return $submission->fresh(['booking', 'pemberkasan']);
+            }, 3);
+        } catch (QueryException $exception) {
+            if (! $this->isBankSubmissionIdempotencyConflict($exception)) {
+                throw $exception;
             }
 
-            $this->assertBankSubmissionEligible($booking, $pemberkasan, $project);
+            return DB::transaction(function () use ($exception, $booking, $pemberkasan, $idempotencyKey, $bank, $bankUnit, $submittedDate, $notes): BankSubmission {
+                $existing = BankSubmission::query()
+                    ->where('idempotency_key', $idempotencyKey)
+                    ->lockForUpdate()
+                    ->first();
 
-            $before = BookingAudit::snapshot($booking);
-            $submission = BankSubmission::query()->create([
-                'booking_id' => $booking->id,
-                'project_id' => $project->id,
-                'pemberkasan_id' => $pemberkasan->id,
-                'source_key' => 'LARAVEL:BANK:' . (string) Str::uuid(),
-                'file_number' => $pemberkasan->file_number,
-                'submission_sequence' => (int) BankSubmission::query()->where('booking_id', $booking->id)->max('submission_sequence') + 1,
-                'bank' => $bank,
-                'bank_unit' => $bankUnit,
-                'submitted_date' => $submittedDate,
-                'result' => null,
-                'approved_amount' => null,
-                'tenor' => null,
-                'withdrawn_flag' => false,
-                'cancelled_flag' => false,
-                'moved_lot_flag' => false,
-                'name_change_flag' => false,
-                'notes' => $notes,
-                'source_owner' => BankSubmission::OWNER_LARAVEL,
-                'idempotency_key' => $idempotencyKey,
-                'source_tab' => 'Laravel',
-                'source_hash' => $fingerprint,
-            ]);
+                if (! $existing) {
+                    throw $exception;
+                }
 
-            $booking->update([
-                'current_stage' => Booking::STAGE_BANK,
-                'source_owner' => Booking::OWNER_LARAVEL,
-            ]);
-            BookingAudit::record(
-                $booking->fresh(),
-                $actor,
-                BookingAudit::ACTION_BANK_SUBMISSION_CREATED,
-                $before,
-                BookingAudit::snapshot($booking->fresh()),
-                $this->requestId(),
-            );
+                return $this->resolveBankSubmissionReplay(
+                    $existing,
+                    $this->bankFingerprint(
+                        $booking->id,
+                        $pemberkasan->id,
+                        $bank,
+                        $bankUnit,
+                        $submittedDate,
+                        $notes,
+                    ),
+                );
+            }, 3);
+        }
+    }
 
-            return $submission->fresh(['booking', 'pemberkasan']);
-        }, 3);
+    private function resolveBankSubmissionReplay(BankSubmission $submission, string $fingerprint): BankSubmission
+    {
+        if (! hash_equals((string) $submission->source_hash, $fingerprint)) {
+            throw new HttpException(409, 'Kunci idempotensi sudah dipakai untuk permintaan berbeda.');
+        }
+
+        return $submission->fresh(['booking', 'pemberkasan']);
+    }
+
+    private function isBankSubmissionIdempotencyConflict(QueryException $exception): bool
+    {
+        $errorInfo = $exception->errorInfo ?? [];
+        $message = strtolower($exception->getMessage());
+
+        return ((string) ($errorInfo[0] ?? $exception->getCode()) === '23000'
+                && (int) ($errorInfo[1] ?? 0) === 1062)
+            && str_contains($message, 'idempotency_key');
     }
 
     public function recordBankResult(User $actor, BankSubmission $submission, array $input): BankSubmission
