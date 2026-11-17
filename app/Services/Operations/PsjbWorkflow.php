@@ -5,6 +5,7 @@ namespace App\Services\Operations;
 use App\Exceptions\LotAllocationConflict;
 use App\Models\AkadRecord;
 use App\Models\BankSubmission;
+use App\Models\BastRecord;
 use App\Models\BiCheck;
 use App\Models\Booking;
 use App\Models\BookingAudit;
@@ -578,6 +579,159 @@ class PsjbWorkflow
         }, 3);
     }
 
+    public function eligibleBastBookings(Project $project): Builder
+    {
+        return Booking::query()
+            ->where('project_id', $project->id)
+            ->where('status', Booking::STATUS_ACTIVE)
+            ->where('current_stage', Booking::STAGE_AKAD)
+            ->whereDoesntHave('bast')
+            ->whereHas('akad', function (Builder $query) use ($project): void {
+                $query->where('project_id', $project->id)
+                    ->where('withdrawn_flag', false)
+                    ->where('cancelled_flag', false);
+            })
+            ->with(['lot', 'buyer', 'akad'])
+            ->orderBy('booking_date')
+            ->orderBy('id');
+    }
+
+    public function recordBast(User $actor, Booking $booking, array $input): BastRecord
+    {
+        [$akadId, $bastNumber, $bastDate, $notes, $idempotencyKey] = $this->bastPayload($input);
+        $project = Project::query()->whereKey($booking->project_id)->firstOrFail();
+        $this->authorizeBastWrite($actor, $project);
+
+        return DB::transaction(function () use (
+            $actor, $booking, $project, $akadId, $bastNumber, $bastDate, $notes, $idempotencyKey,
+        ): BastRecord {
+            $project = Project::query()->whereKey($project->id)->lockForUpdate()->firstOrFail();
+            $this->authorizeBastWrite($actor, $project);
+
+            $booking = Booking::query()->whereKey($booking->id)->lockForUpdate()->firstOrFail();
+            Lot::query()->whereKey($booking->lot_id)->lockForUpdate()->firstOrFail();
+            $akad = AkadRecord::query()->whereKey($akadId)->lockForUpdate()->first();
+
+            $fingerprint = $this->bastFingerprint($booking->id, $akadId, $bastNumber, $bastDate, $notes);
+            $existing = BastRecord::query()->where('idempotency_key', $idempotencyKey)->lockForUpdate()->first();
+            if ($existing) {
+                if (! hash_equals((string) $existing->source_hash, $fingerprint)) {
+                    throw new HttpException(409, 'Kunci idempotensi sudah dipakai untuk permintaan berbeda.');
+                }
+
+                return $existing->fresh(['booking', 'akad']);
+            }
+
+            $this->assertBastEligible($booking, $project, $akad);
+
+            if (BastRecord::query()->where('booking_id', $booking->id)->exists()) {
+                throw new HttpException(409, 'Booking ini sudah memiliki BAST.');
+            }
+
+            $before = BookingAudit::snapshot($booking);
+            $record = BastRecord::query()->create([
+                'booking_id' => $booking->id,
+                'akad_id' => $akad->id,
+                'project_id' => $project->id,
+                'source_key' => 'LARAVEL:BAST:' . (string) Str::uuid(),
+                'bast_number' => $bastNumber,
+                'bast_date' => $bastDate,
+                'notes' => $notes,
+                'source_owner' => BastRecord::OWNER_LARAVEL,
+                'idempotency_key' => $idempotencyKey,
+                'source_tab' => 'Laravel',
+                'source_hash' => $fingerprint,
+            ]);
+            $booking->update([
+                'current_stage' => Booking::STAGE_BAST,
+                'status' => Booking::STATUS_COMPLETED,
+                'bast_date' => $bastDate,
+                'is_current_holder' => true,
+                'source_owner' => Booking::OWNER_LARAVEL,
+            ]);
+            BookingAudit::record(
+                $booking->fresh(),
+                $actor,
+                BookingAudit::ACTION_BAST_CREATED,
+                $before,
+                BookingAudit::snapshot($booking->fresh()),
+                $this->requestId(),
+            );
+
+            return $record->fresh(['booking', 'akad']);
+        }, 3);
+    }
+
+    private function assertBastEligible(Booking $booking, Project $project, ?AkadRecord $akad): void
+    {
+        if ($booking->project_id !== $project->id) {
+            throw new AccessDeniedHttpException('Booking tidak sesuai dengan proyek ini.');
+        }
+        if ($booking->status !== Booking::STATUS_ACTIVE) {
+            throw new HttpException(422, 'Booking harus berstatus Aktif untuk BAST.');
+        }
+        if ($booking->current_stage !== Booking::STAGE_AKAD) {
+            throw new HttpException(422, 'Booking belum berada pada tahap Akad.');
+        }
+        if (! $akad || $akad->booking_id !== $booking->id || $akad->project_id !== $project->id) {
+            throw new AccessDeniedHttpException('Akad tidak sesuai dengan booking atau proyek ini.');
+        }
+        if ($akad->withdrawn_flag || $akad->cancelled_flag) {
+            throw new HttpException(422, 'Akad yang dipilih tidak berstatus aktif.');
+        }
+    }
+
+    private function bastPayload(array $input): array
+    {
+        $bastNumber = trim((string) ($input['bast_number'] ?? ''));
+        $idempotencyKey = trim((string) ($input['idempotency_key'] ?? ''));
+        $validator = Validator::make(
+            [
+                'bast_number' => $bastNumber,
+                'bast_date' => $input['bast_date'] ?? null,
+                'idempotency_key' => $idempotencyKey,
+            ],
+            [
+                'bast_number' => ['required', 'string', 'max:96'],
+                'bast_date' => ['required', 'date'],
+                'idempotency_key' => ['required', 'string', 'max:255'],
+            ],
+        );
+        if ($validator->fails()) {
+            throw new HttpException(422, 'Data BAST tidak valid.');
+        }
+
+        $akadId = $input['akad_id'] ?? null;
+        if (! $akadId) {
+            throw new HttpException(422, 'Akad sumber wajib dipilih.');
+        }
+        $notes = trim((string) ($input['notes'] ?? ''));
+
+        return [
+            (int) $akadId,
+            $bastNumber,
+            Carbon::parse($input['bast_date'])->toDateString(),
+            $notes === '' ? null : $notes,
+            $idempotencyKey,
+        ];
+    }
+
+    private function bastFingerprint(
+        int $bookingId,
+        int $akadId,
+        string $bastNumber,
+        string $bastDate,
+        ?string $notes,
+    ): string {
+        return hash('sha256', json_encode([
+            'booking_id' => $bookingId,
+            'akad_id' => $akadId,
+            'bast_number' => $bastNumber,
+            'bast_date' => $bastDate,
+            'notes' => $notes,
+        ], JSON_THROW_ON_ERROR));
+    }
+
     private function assertAkadEligible(Booking $booking, Project $project, ?PpjbRecord $ppjb): void
     {
         if ($booking->project_id !== $project->id) {
@@ -770,6 +924,11 @@ class PsjbWorkflow
     private function authorizeAkadWrite(User $actor, Project $project): void
     {
         $this->authorizePilotWrite($actor, $project, 'Akad hanya tersedia untuk proyek pilot.');
+    }
+
+    private function authorizeBastWrite(User $actor, Project $project): void
+    {
+        $this->authorizePilotWrite($actor, $project, 'BAST hanya tersedia untuk proyek pilot.');
     }
 
     private function authorizePilotWrite(User $actor, Project $project, string $message): void
