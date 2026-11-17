@@ -68,6 +68,7 @@ class BookingController extends Controller
         $booking->load([
             'project.branch', 'lot', 'buyer',
             'predecessor.lot', 'predecessor.buyer', 'successors.buyer', 'successors.lot',
+            'transition.user', 'outgoingTransitions.user',
             'psjb', 'biCheck', 'pemberkasan', 'bankSubmissions.pemberkasan', 'ppjb', 'akad', 'bast',
         ]);
 
@@ -126,6 +127,18 @@ class BookingController extends Controller
                 'Sumber Akad' => $r->akad_id ? 'Akad #' . $r->akad_id : null,
                 'Catatan' => $r->notes,
             ])))
+            ->when($booking->transition, fn ($c, $r) => $c->push($this->entry($r->action === \App\Models\BookingTransition::ACTION_NAME_CHANGE ? 'GANTI NAMA' : 'PINDAH KAVLING', $r->effective_date, [
+                'Booking sumber' => '#' . $r->source_booking_id,
+                'Booking penerus' => '#' . $r->successor_booking_id,
+                'Alasan' => $r->reason,
+                'Aktor' => $r->user?->name,
+            ])))
+            ->when($booking->outgoingTransitions->isNotEmpty(), fn ($c) => $c->merge($booking->outgoingTransitions->map(fn ($r) => $this->entry($r->action === \App\Models\BookingTransition::ACTION_NAME_CHANGE ? 'GANTI NAMA' : 'PINDAH KAVLING', $r->effective_date, [
+                'Booking sumber' => '#' . $r->source_booking_id,
+                'Booking penerus' => '#' . $r->successor_booking_id,
+                'Alasan' => $r->reason,
+                'Aktor' => $r->user?->name,
+            ]))))
             ->sortBy(fn (array $entry) => [$entry['sort'] === '' ? 1 : 0, $entry['sort']])
             ->values();
 

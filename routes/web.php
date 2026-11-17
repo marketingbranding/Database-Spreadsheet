@@ -5,6 +5,7 @@ use App\Http\Controllers\BastController;
 use App\Http\Controllers\AkadController;
 use App\Http\Controllers\BiCheckController;
 use App\Http\Controllers\BookingController;
+use App\Http\Controllers\BookingChangeController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\InventoryController;
@@ -59,6 +60,10 @@ Route::middleware(['auth', 'active'])->group(function () {
 
     Route::get('/bookings', [BookingController::class, 'index'])->name('bookings.index');
     Route::get('/bookings/{booking}', [BookingController::class, 'show'])->name('bookings.show');
+    Route::get('/projects/{project}/bookings/{booking}/change-name', [BookingChangeController::class, 'nameCreate'])->name('bookings.change-name.create');
+    Route::post('/projects/{project}/bookings/{booking}/change-name', [BookingChangeController::class, 'nameStore'])->name('bookings.change-name.store');
+    Route::get('/projects/{project}/bookings/{booking}/move-lot', [BookingChangeController::class, 'lotCreate'])->name('bookings.move-lot.create');
+    Route::post('/projects/{project}/bookings/{booking}/move-lot', [BookingChangeController::class, 'lotStore'])->name('bookings.move-lot.store');
     Route::post('/bookings/{booking}/withdraw', [PsjbController::class, 'withdraw'])->name('bookings.withdraw');
     Route::post('/bookings/{booking}/cancel', [PsjbController::class, 'cancel'])->name('bookings.cancel');
 

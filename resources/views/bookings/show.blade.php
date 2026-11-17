@@ -36,6 +36,10 @@
 <section class="card section" aria-label="Keputusan booking">
     <div class="card-title"><h2>Aksi operasional</h2><span class="hint">Aksi tidak dapat dibatalkan</span></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+        @if (! $booking->ppjb && ! $booking->akad && ! $booking->bast)
+            <a class="btn btn--secondary" href="{{ route('bookings.change-name.create', [$booking->project, $booking]) }}">Ganti Nama</a>
+            <a class="btn btn--secondary" href="{{ route('bookings.move-lot.create', [$booking->project, $booking]) }}">Pindah Kavling</a>
+        @endif
         <form method="POST" action="{{ route('bookings.withdraw', $booking) }}">
             @csrf
             <button class="btn btn--secondary" type="submit">Withdraw / Mundur</button>
