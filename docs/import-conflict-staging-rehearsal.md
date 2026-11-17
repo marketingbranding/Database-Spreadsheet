@@ -1,0 +1,129 @@
+# Import Conflict Pilot — staging rehearsal
+
+## Scope and decision
+
+Read-only source review and staging-only module rehearsal for `PRJ-JPR-KWS` and
+`PRJ-MGL-KLG`. Source Sheets and operational booking/document records were not
+edited. The pilot UI gate remains disabled for branch admins pending HQ approval.
+
+Pilot readiness: **HOLD** — projection is working, but HQ decisions are needed on
+the evidence exceptions listed below.
+
+## Setup
+
+The staging database needed the new migration before conflict-only projection
+could persist. The first `--apply` attempt failed with `1146 Table
+'marison_multibranch.import_conflicts' doesn't exist`; no records were changed.
+After migration, projection succeeded.
+
+```bash
+APP_ENV=staging php artisan migrate --force
+
+APP_ENV=staging php artisan marison:conflicts:project PRJ-JPR-KWS
+APP_ENV=staging php artisan marison:conflicts:project PRJ-MGL-KLG
+APP_ENV=staging php artisan marison:conflicts:project PRJ-JPR-KWS --apply
+APP_ENV=staging php artisan marison:conflicts:project PRJ-MGL-KLG --apply
+```
+
+Preview and apply counts matched:
+
+| Project | Previewed | Projected | Cases |
+|---|---:|---:|---|
+| `PRJ-JPR-KWS` | 11 | 11 | 6 bank reject, 2 competing claims, 2 stock, 1 orphan BI |
+| `PRJ-MGL-KLG` | 7 | 7 | 1 bank reject, 6 stock |
+
+Operational record counts and max IDs before and after projection were unchanged:
+
+| Table | Count | Max ID |
+|---|---:|---:|
+| `bookings` | 450 | 1804 |
+| `lots` | 457 | 1832 |
+| `ppjb_records` | 284 | 1136 |
+| `akad_records` | 282 | 1128 |
+| `bast_records` | 253 | 1012 |
+| `bi_checks` | 383 | 1532 |
+| `booking_audits` | 0 | 0 |
+| `booking_transitions` | 0 | 0 |
+
+## Exact evidence retained
+
+Representative persisted conflicts:
+
+- Kuwasen M22: `COMPETING_CLAIMS`, PSJB row 214, source key
+  `PSJB:PSJB-TRX-JPR-3275040601830014-M22`, lot ID 1615, booking IDs
+  **1567** (`CURRENT_HOLDER`, `NEEDS_REVIEW`) and **1601** (`CLAIM`, `ACTIVE`).
+- Kuwasen orphan BI: `BI Checking` row 201, source key `BI-`, no guessed booking
+  link, inventory unchanged.
+- Kuwasen L02: `STOCK_DISAGREEMENT`, `hq_report_export`, lot ID 1583, booking ID
+  1557; HQ position `PEMBERKASAN`, Laravel position `AVAILABLE`.
+- Kuwasen M20: `STOCK_DISAGREEMENT`, `hq_report_export`, lot ID 1613, booking ID
+  1565; HQ position `PEMBERKASAN`, Laravel position `AVAILABLE`.
+- Kalinegoro transfer links: D07 (1633, 1634, 1635), G03 (1639, 1660, 1662),
+  G05 (1616, 1628, 1629, 1652, 1654), G16 (1626, 1658, 1659, 1661).
+- Kalinegoro bank reject: Proses Bank row 8, source key
+  `PSJB:PSJB-TRX-MGL-3325116004060001-F15`, booking ID 1612, but the resolved
+  source row/lot is **D14 / lot ID 1701**. HQ must decide whether the source key
+  or the source row is authoritative.
+- Additional stock disagreements detected from the HQ export: Kalinegoro H07
+  (booking 1804) and H11 (booking 1608). These are not part of the original
+  14-issue register and need separate HQ review.
+
+## Fixture rehearsal
+
+`tests/Feature/ImportConflictStagingRehearsalTest.php` passed with 23 assertions.
+It verified:
+
+- M22-style competing claims, orphan BI, bank rejects, and L02/M20-style stock
+  disagreement project from fixture data.
+- An affected lot is absent from `availableLots()` and rejected by the locked
+  create path, while an unaffected lot remains writable in a rolled-back
+  transaction.
+- A branch `CONFIRM_LARAVEL` proposal plus HQ approval resolved a conflict
+  without changing booking counts.
+- A fixture-only `CORRECT_LARAVEL` selected the exact current cycle and withdrew
+  the competing claim.
+- Unchanged reimport preserved the reviewed fingerprint and resolved state.
+- A materially changed BI decision created one successor conflict linked by
+  `supersedes_conflict_id`.
+- PPJB, Akad, and BAST IDs and links stayed unchanged during signed-document
+  escalation.
+
+## Browser rehearsal
+
+With the UI gate temporarily enabled in staging, Playwright verified:
+
+- Branch role: project register, M22 detail, exact booking IDs, source tab/row,
+  fingerprint, labeled Sheets/Laravel values, inventory impact, and proposal
+  form. Zero console errors.
+- HQ role: pending proposal, evidence, submitter, Setujui/Tolak controls, and
+  approval writing `RESOLVED` with audit history. Zero console errors.
+- Desktop `1440×900`: no document overflow (`scrollWidth 1440 = clientWidth`).
+- Mobile `390×844`: initial overflow `653px`; fixed by wrapping JSON evidence
+  and collapsing the timeline/grid at the mobile breakpoint. Rechecked at
+  `390px` with `scrollWidth 390 = clientWidth` and no console errors.
+
+The temporary rehearsal users, proposal, events, and HQ approval were removed
+after verification. Conflict 10 was restored to `OPEN`; the staging gate was
+disabled again and `.env` restored to `APP_ENV=local`.
+
+## Known gaps and HQ decisions
+
+1. Decide M22: confirm booking 1567 as holder or approve a linked correction.
+2. Decide L02/M20: confirm Laravel authoritative or approve a claim correction.
+3. Decide the four Kalinegoro transfer-link mismatches and whether same-lot
+   source/destination is valid historical practice.
+4. Resolve the F15 source key / D14 source row mismatch.
+5. Review H07/H11 stock disagreements newly detected from the HQ export.
+6. Bank rejects remain routed to the existing booking decision workflow.
+7. Signed PPJB/Akad/BAST changes remain escalation-only; no automatic
+   two-system reconciliation is implemented.
+
+## Rollback
+
+- Disable `MARISON_IMPORT_CONFLICTS_ENABLED` and leave the migration in place.
+- Do not delete conflict, proposal, or event history.
+- Applied booking corrections are reversed only through a new approved domain
+  action.
+- If projection must be redone, clear only pilot conflict/proposal/event rows;
+  never delete bookings, documents, or audits.
+- Production cutover and scheduled imports remain out of scope.

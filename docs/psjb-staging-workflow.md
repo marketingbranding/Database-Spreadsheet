@@ -32,6 +32,28 @@ performed through these staging forms. Laravel-owned source bookings and their
 successors survive stale Sheets imports; conflicting source rows are reported as
 `import_conflict`.
 
+## Konflik Impor pilot
+
+The project-scoped Konflik Impor register is staging-only and disabled by
+default with `MARISON_IMPORT_CONFLICTS_ENABLED=false`. It presents exact lot,
+booking cycle, source tab/row/key, fingerprint, labeled Sheets/Laravel values,
+and inventory impact. Branch admins submit proposed resolutions with evidence;
+HQ approves or rejects. Approved claim and BI corrections run through
+`PsjbWorkflow` in one transaction and create booking audits plus conflict
+events. `CONFIRM_LARAVEL` records the reviewed fingerprint without changing
+records; a material source change opens a successor review and retains history.
+
+Only unresolved `COMPETING_CLAIMS` and `STOCK_DISAGREEMENT` conflicts block new
+bookings, and only on their exact lots. Other lots remain writable. A lot with
+an active holder remains unavailable even after its conflict closes.
+
+Bank rejects are routed to the existing booking decision workflow. PPJB, Akad,
+and BAST conflicts accept evidence and HQ escalation only; signed documents and
+their links are never changed by this module.
+
+See `docs/import-conflict-staging-rehearsal.md` for commands, projected counts,
+sample evidence, browser checks, rollback, and pending HQ decisions.
+
 ## Staging setup
 
 Run dry-runs first. Review unresolved issues. Explicit acknowledgment required

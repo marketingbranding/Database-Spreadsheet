@@ -303,6 +303,7 @@ a:hover { text-decoration: underline; }
 /* Tables ------------------------------------------------------------------ */
 
 .table-wrap { overflow-x: auto; }
+.pre-wrap { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-width: 100%; }
 
 table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
 
@@ -492,5 +493,7 @@ td .small, .small { font-size: 0.8rem; }
   .filterbar input[type="search"] { min-width: 0; flex: 1; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid__wide { grid-column: auto; }
+  .timeline { grid-template-columns: 1fr !important; }
+  .timeline dd { overflow-wrap: anywhere; word-break: break-word; }
   .pipeline-row { grid-template-columns: 110px 1fr 40px; }
 }
