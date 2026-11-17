@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -39,6 +40,16 @@ class User extends Authenticatable
     public function projects(): BelongsToMany
     {
         return $this->belongsToMany(Project::class)->withTimestamps();
+    }
+
+    public function proposedImportConflictResolutions(): HasMany
+    {
+        return $this->hasMany(ImportConflictProposal::class, 'proposed_by');
+    }
+
+    public function approvedImportConflictResolutions(): HasMany
+    {
+        return $this->hasMany(ImportConflictProposal::class, 'approved_by');
     }
 
     public function isHq(): bool

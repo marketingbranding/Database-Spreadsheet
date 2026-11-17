@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ImportIssue extends Model
 {
@@ -34,5 +35,10 @@ class ImportIssue extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function conflicts(): HasMany
+    {
+        return $this->hasMany(ImportConflict::class, 'current_import_issue_id');
     }
 }

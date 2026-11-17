@@ -128,6 +128,11 @@ class Booking extends Model
         return $this->hasMany(BookingAudit::class);
     }
 
+    public function importConflictLinks(): HasMany
+    {
+        return $this->hasMany(ImportConflictBooking::class);
+    }
+
     public function biCheck(): HasOne
     {
         return $this->hasOne(BiCheck::class);

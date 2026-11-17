@@ -29,6 +29,8 @@ class BookingAudit extends Model
 
     public const ACTION_BOOKING_CHANGED = 'booking_changed';
 
+    public const ACTION_IMPORT_CONFLICT_RESOLVED = 'import_conflict_resolved';
+
     protected $fillable = [
         'project_id', 'booking_id', 'user_id', 'action', 'before', 'after', 'request_id',
     ];

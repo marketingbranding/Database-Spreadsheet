@@ -71,6 +71,11 @@ class Project extends Model
         return $this->hasMany(ImportIssue::class);
     }
 
+    public function importConflicts(): HasMany
+    {
+        return $this->hasMany(ImportConflict::class);
+    }
+
     public function scopeVisibleTo(Builder $query, User $user): Builder
     {
         if ($user->isHq()) {

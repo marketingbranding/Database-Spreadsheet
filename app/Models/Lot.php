@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
@@ -43,6 +44,11 @@ class Lot extends Model
     public function currentBooking(): HasOne
     {
         return $this->hasOne(Booking::class)->where('is_current_holder', true);
+    }
+
+    public function importConflicts(): BelongsToMany
+    {
+        return $this->belongsToMany(ImportConflict::class, 'import_conflict_lot')->withTimestamps();
     }
 
     public function isAvailable(): bool
