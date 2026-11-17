@@ -4,12 +4,13 @@ namespace Tests\Feature;
 
 use App\Models\BastRecord;
 use App\Models\Booking;
+use App\Models\Lot;
 
 class BastK20Test extends FixtureProjectTestCase
 {
     public function test_k20_booking_chain_keeps_bast_links_exact_and_counts_each_record_once(): void
     {
-        $lot = \App\Models\Lot::query()->where('code', 'K20')->firstOrFail();
+        $lot = Lot::query()->where('code', 'K20')->firstOrFail();
         $bookings = Booking::query()->where('lot_id', $lot->id)->orderBy('id')->get();
         $this->assertGreaterThanOrEqual(1, $bookings->count());
 

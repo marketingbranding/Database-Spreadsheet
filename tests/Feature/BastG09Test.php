@@ -3,9 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\AkadRecord;
+use App\Models\BastRecord;
 use App\Models\Booking;
 use App\Models\Branch;
-use App\Models\BastRecord;
+use App\Models\Lot;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\Operations\PsjbWorkflow;
@@ -16,7 +17,7 @@ class BastG09Test extends FixtureProjectTestCase
     public function test_g09_april_akad_cannot_qualify_september_bast(): void
     {
         $this->project->update(['management_mode' => Project::MANAGEMENT_LARAVEL]);
-        $lot = \App\Models\Lot::query()->where('code', 'G09')->firstOrFail();
+        $lot = Lot::query()->where('code', 'G09')->firstOrFail();
         $bookings = Booking::query()->where('lot_id', $lot->id)->get();
         $april = $bookings->firstWhere('status', Booking::STATUS_MUNDUR);
         $september = $bookings->firstWhere('status', Booking::STATUS_COMPLETED);
