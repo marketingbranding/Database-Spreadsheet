@@ -137,7 +137,7 @@ class AuthAccessTest extends TestCase
         $response->assertSessionHasErrors('email');
     }
 
-    public function test_import_issue_can_be_resolved_by_assigned_user(): void
+    public function test_import_issue_cannot_be_closed_directly(): void
     {
         $admin = User::query()->create([
             'name' => 'Admin Jepara',
@@ -160,8 +160,8 @@ class AuthAccessTest extends TestCase
 
         $this->actingAs($admin)
             ->post("/imports/issues/{$issue->id}/resolve")
-            ->assertRedirect();
+            ->assertNotFound();
 
-        $this->assertNotNull($issue->fresh()->resolved_at);
+        $this->assertNull($issue->fresh()->resolved_at);
     }
 }

@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'import_conflicts_enabled' => env('MARISON_IMPORT_CONFLICTS_ENABLED', false),
+
     'sheets' => [
         'credentials' => env('GOOGLE_SHEETS_CREDENTIALS', storage_path('app/google/service-account.json')),
         'ca_bundle' => env('GOOGLE_SHEETS_CA_BUNDLE'),

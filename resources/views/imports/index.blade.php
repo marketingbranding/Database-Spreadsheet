@@ -32,11 +32,12 @@
                             <td class="small">{{ $issue->code }}</td>
                             <td>{{ $issue->message }}</td>
                             <td class="small muted">{{ $issue->source_tab }}{{ $issue->source_row ? ' baris ' . $issue->source_row : '' }}</td>
-                            <td>
-                                <form method="POST" action="{{ route('imports.issues.resolve', $issue) }}">
-                                    @csrf
-                                    <button type="submit" class="btn btn--small btn--secondary">Selesai</button>
-                                </form>
+                            <td class="small">
+                                @if (config('marison.import_conflicts_enabled') && in_array($issue->project?->code, ['PRJ-JPR-KWS', 'PRJ-MGL-KLG'], true))
+                                    <a class="btn btn--small btn--secondary" href="{{ route('import-conflicts.index', $issue->project) }}">Tinjau konflik</a>
+                                @else
+                                    <span class="muted">—</span>
+                                @endif
                             </td>
                         </tr>
                     @endforeach

@@ -20,6 +20,15 @@ class ImportConflictProposal extends Model
 
     public const ACTION_ESCALATE_SIGNED_DOCUMENT = 'ESCALATE_SIGNED_DOCUMENT';
 
+    public const ACTIONS = [
+        self::ACTION_CONFIRM_LARAVEL,
+        self::ACTION_CORRECT_LARAVEL,
+        self::ACTION_LINK_BI,
+        self::ACTION_SELECT_CURRENT_CLAIM,
+        self::ACTION_ROUTE_BOOKING_DECISION,
+        self::ACTION_ESCALATE_SIGNED_DOCUMENT,
+    ];
+
     public const STATUS_PENDING = 'PENDING';
 
     public const STATUS_APPROVED = 'APPROVED';

@@ -7,6 +7,7 @@ use App\Http\Controllers\BiCheckController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\BookingChangeController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ImportConflictController;
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\PemberkasanController;
@@ -72,5 +73,10 @@ Route::middleware(['auth', 'active'])->group(function () {
 
     Route::get('/imports', [ImportController::class, 'index'])->name('imports.index');
     Route::get('/imports/{batch}', [ImportController::class, 'show'])->name('imports.show');
-    Route::post('/imports/issues/{issue}/resolve', [ImportController::class, 'resolve'])->name('imports.issues.resolve');
+
+    Route::get('/projects/{project}/import-conflicts', [ImportConflictController::class, 'index'])->name('import-conflicts.index');
+    Route::get('/projects/{project}/import-conflicts/{conflict}', [ImportConflictController::class, 'show'])->name('import-conflicts.show');
+    Route::post('/projects/{project}/import-conflicts/{conflict}/proposals', [ImportConflictController::class, 'storeProposal'])->name('import-conflicts.proposal.store');
+    Route::post('/projects/{project}/import-conflicts/{conflict}/proposals/{proposal}/approve', [ImportConflictController::class, 'approve'])->name('import-conflicts.proposal.approve');
+    Route::post('/projects/{project}/import-conflicts/{conflict}/proposals/{proposal}/reject', [ImportConflictController::class, 'reject'])->name('import-conflicts.proposal.reject');
 });

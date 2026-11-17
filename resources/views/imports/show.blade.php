@@ -94,13 +94,12 @@
                                     <span class="badge badge--warning">terbuka</span>
                                 @endif
                             </td>
-                            <td>
-                                @unless ($issue->resolved_at)
-                                    <form method="POST" action="{{ route('imports.issues.resolve', $issue) }}">
-                                        @csrf
-                                        <button type="submit" class="btn btn--small btn--secondary">Selesai</button>
-                                    </form>
-                                @endunless
+                            <td class="small">
+                                @if (config('marison.import_conflicts_enabled') && in_array($batch->project?->code, ['PRJ-JPR-KWS', 'PRJ-MGL-KLG'], true))
+                                    <a class="btn btn--small btn--secondary" href="{{ route('import-conflicts.index', $batch->project) }}">Tinjau konflik</a>
+                                @else
+                                    <span class="muted">—</span>
+                                @endif
                             </td>
                         </tr>
                     @endforeach

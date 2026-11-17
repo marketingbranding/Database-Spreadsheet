@@ -3,9 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ImportBatch;
-use App\Models\ImportIssue;
 use Illuminate\Contracts\View\View;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 class ImportController extends Controller
@@ -43,12 +41,4 @@ class ImportController extends Controller
         return view('imports.show', ['batch' => $batch]);
     }
 
-    public function resolve(Request $request, ImportIssue $issue): RedirectResponse
-    {
-        abort_unless($request->user()?->canAccessProject($issue->project), 403, 'You do not have access to this project.');
-
-        $issue->forceFill(['resolved_at' => now()])->save();
-
-        return back()->with('status', 'Issue ditandai selesai.');
-    }
 }
