@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Booking;
 use App\Models\BookingAudit;
+use App\Models\BookingTransition;
 use App\Models\Branch;
 use App\Models\Buyer;
 use App\Models\Lot;
@@ -11,7 +12,6 @@ use App\Models\PpjbRecord;
 use App\Models\Project;
 use App\Models\PsjbRecord;
 use App\Models\User;
-use App\Models\BookingTransition;
 use App\Services\Operations\PsjbWorkflow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;

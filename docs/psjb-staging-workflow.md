@@ -4,11 +4,33 @@
 
 Operational writes cover PSJB create, BI Checking, Pemberkasan, Proses Bank,
 TTD PPJB, Withdraw/Mundur, and Cancel/Batal for Kalinegoro and Kuwasen staging
-only. Buyer substitutions, lot transfers, Akad, and BAST remain Sheets-managed.
+only. Pre-signing buyer substitutions (Ganti Nama) and lot transfers (Pindah
+Kavling) are also available through the Laravel workflow. Akad and BAST remain
+Laravel-managed as previously documented.
 
 Production Sheets stay read-only. Do not enable operational writes or switch
 production project mode. Mode command accepts only pilot codes `PRJ-MGL-KLG`
 and `PRJ-JPR-KWS`.
+
+## Ganti Nama and Pindah Kavling
+
+These actions are limited to active bookings before a PPJB, Akad, or BAST record
+exists. The record-level document check is authoritative even if the booking
+stage is stale. A change preserves the source booking and creates a fresh PSJB
+successor with an explicit transition record containing the source and successor
+IDs, action, effective date, reason, actor, and idempotency key.
+
+Ganti Nama keeps the same lot and requires a different buyer. Pindah Kavling
+keeps the buyer, locks and reserves the destination, and releases the source
+only after the destination is confirmed available. Payment method, price,
+sales/coordinator, and UTJ metadata carry forward. The successor references the
+original PSJB UTJ record so it is not counted as a second payment. BI,
+Pemberkasan, bank approvals, PPJB, Akad, and BAST remain attached to the source.
+
+Changes after signed documents are still Sheets-managed and must not be
+performed through these staging forms. Laravel-owned source bookings and their
+successors survive stale Sheets imports; conflicting source rows are reported as
+`import_conflict`.
 
 ## Staging setup
 
