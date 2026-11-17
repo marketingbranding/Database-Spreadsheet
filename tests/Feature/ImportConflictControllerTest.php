@@ -49,6 +49,70 @@ class ImportConflictControllerTest extends TestCase
             ->assertSee('Ajukan Resolusi');
     }
 
+    public function test_detail_page_shows_exact_source_booking_cycle_evidence_and_history(): void
+    {
+        [$project, , $booking, $admin, $hq] = $this->scenario('PRJ-JPR-KWS');
+        $conflict = $this->conflictFor($project);
+        $conflict->update([
+            'case_type' => ImportConflict::CASE_SIGNED_DOCUMENT,
+            'source_tab' => 'PPJB Developer',
+            'source_row' => 41,
+            'source_key' => 'PPJB:TRX-41',
+            'source_fingerprint' => 'fingerprint-abc123',
+        ]);
+        ImportConflictEvent::query()->create([
+            'import_conflict_id' => $conflict->id,
+            'actor_id' => $admin->id,
+            'event_type' => ImportConflictEvent::TYPE_PROJECTED,
+            'reason' => 'Evidence first projected',
+        ]);
+        $this->actingAs($admin)
+            ->post(route('import-conflicts.proposal.store', [$project, $conflict]), $this->proposalPayload('detail-evidence'))
+            ->assertRedirect();
+        $proposal = ImportConflictProposal::query()->firstOrFail();
+        $proposal->update(['approved_by' => $hq->id]);
+
+        $this->actingAs($hq)
+            ->get(route('import-conflicts.show', [$project, $conflict]))
+            ->assertOk()
+            ->assertSee('M22')
+            ->assertSee('PPJB:TRX-41')
+            ->assertSee('41')
+            ->assertSee('fingerprint-abc123')
+            ->assertSee('PERLU CEK')
+            ->assertSee('NEEDS_REVIEW')
+            ->assertSee('Dampak inventaris')
+            ->assertSee('Evidence first projected')
+            ->assertSee('Signed source review attached in case file')
+            ->assertSee('PERBAIKAN DOKUMEN TERTANDA')
+            ->assertSee('Usulan #'.$proposal->id);
+    }
+
+    public function test_bank_reject_detail_routes_to_existing_booking_decision_workflow(): void
+    {
+        [$project, , $booking, $admin] = $this->scenario('PRJ-JPR-KWS');
+        $conflict = ImportConflict::query()->create([
+            'project_id' => $project->id,
+            'stable_source_identity' => $project->code.'|BANK_REJECT|Proses Bank|12',
+            'case_type' => ImportConflict::CASE_BANK_REJECT,
+            'status' => ImportConflict::STATUS_OPEN,
+            'source_tab' => 'Proses Bank',
+            'source_row' => 12,
+            'source_key' => $booking->source_booking_key,
+            'source_fingerprint' => hash('sha256', 'bank-detail'),
+        ]);
+        $conflict->bookingLinks()->create([
+            'booking_id' => $booking->id,
+            'role' => ImportConflictBooking::ROLE_LINK_TARGET,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('import-conflicts.show', [$project, $conflict]))
+            ->assertOk()
+            ->assertSee('Kasus bank dialihkan ke alur keputusan booking yang sudah ada.')
+            ->assertSee(route('bookings.show', $booking));
+    }
+
     public function test_branch_admin_cannot_view_other_project_or_cross_project_conflict(): void
     {
         [$project, , , $admin] = $this->scenario('PRJ-JPR-KWS');

@@ -17,6 +17,9 @@
             <a class="btn btn--secondary" href="{{ route('ppjb.index', $project) }}">TTD PPJB</a>
             <a class="btn btn--secondary" href="{{ route('akad.index', $project) }}">Akad</a>
             <a class="btn btn--secondary" href="{{ route('bast.index', $project) }}">BAST</a>
+            @if (config('marison.import_conflicts_enabled'))
+                <a class="btn btn--secondary" href="{{ route('import-conflicts.index', $project) }}">Konflik Impor</a>
+            @endif
         @endif
         @if (auth()->user()->role === 'branch_admin' && config('app.env') === 'staging' && filter_var(env('MARISON_OPERATIONAL_WRITES', false), FILTER_VALIDATE_BOOL))
             <a class="btn" href="{{ route('psjb.create', $project) }}">Buat PSJB</a>

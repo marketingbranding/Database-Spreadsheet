@@ -26,10 +26,13 @@
     </dl>
 
     @if ($conflict->case_type === App\Models\ImportConflict::CASE_SIGNED_DOCUMENT)
-        <p class="notice">PPJB, Akad, atau BAST terlibat. Perubahan dokumen tertanda tidak diizinkan; hanya bukti dan eskalasi HQ.</p>
+        <p class="notice"><strong>PERBAIKAN DOKUMEN TERTANDA:</strong> PPJB, Akad, atau BAST terlibat. Perubahan dokumen tertanda tidak diizinkan; hanya bukti dan eskalasi HQ.</p>
     @endif
     @if ($conflict->case_type === App\Models\ImportConflict::CASE_BANK_REJECT)
         <p class="notice">Kasus bank dialihkan ke alur keputusan booking yang sudah ada.</p>
+        @foreach ($conflict->bookingLinks as $link)
+            <p><a class="btn btn--small btn--secondary" href="{{ route('bookings.show', $link->booking) }}">Buka keputusan booking #{{ $link->booking_id }}</a></p>
+        @endforeach
     @endif
 </section>
 
@@ -66,6 +69,7 @@
             <article class="section">
                 <h3>Usulan #{{ $proposal->id }} — {{ $proposal->action }}</h3>
                 <p>{{ $proposal->proposer?->name }} · {{ $proposal->reason }}</p>
+                <p class="small muted">Status: {{ $proposal->status }} · Pengirim: {{ $proposal->proposer?->name }} · Penyetuju: {{ $proposal->approver?->name ?? '—' }}</p>
                 <pre class="pre-wrap">{{ $proposal->evidence }}</pre>
                 <form method="POST" action="{{ route('import-conflicts.proposal.approve', [$project, $conflict, $proposal]) }}" class="form-inline">
                     @csrf
