@@ -4,7 +4,10 @@
 
 Read-only source review and staging-only module rehearsal for `PRJ-JPR-KWS` and
 `PRJ-MGL-KLG`. Source Sheets and operational booking/document records were not
-edited. The pilot UI gate remains disabled for branch admins pending HQ approval.
+edited. HQ approved staging access for the two project-scoped branch admins on
+17 Nov 2026; the staging gate is enabled in the local staging `.env` for
+`jepara@marison.test` and `magelang@marison.test`. Real conflicts remain open
+for separate HQ decisions.
 
 Pilot readiness: **HOLD** — projection is working, but HQ decisions are needed on
 the evidence exceptions listed below.
