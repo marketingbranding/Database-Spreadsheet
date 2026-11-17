@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Booking;
 use App\Models\Branch;
+use App\Models\Lot;
 use App\Models\PpjbRecord;
 use App\Models\Project;
 use App\Models\User;
@@ -15,7 +16,7 @@ class AkadG09Test extends FixtureProjectTestCase
     public function test_g09_april_ppjb_cannot_qualify_september_booking(): void
     {
         $this->project->update(['management_mode' => Project::MANAGEMENT_LARAVEL]);
-        $lot = \App\Models\Lot::query()->where('code', 'G09')->firstOrFail();
+        $lot = Lot::query()->where('code', 'G09')->firstOrFail();
         $bookings = Booking::query()->where('lot_id', $lot->id)->get();
         $april = $bookings->firstWhere('status', Booking::STATUS_MUNDUR);
         $september = $bookings->firstWhere('status', Booking::STATUS_COMPLETED);

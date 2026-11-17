@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\AkadRecord;
 use App\Models\Booking;
 use App\Models\BookingAudit;
 use App\Models\Branch;
