@@ -23,6 +23,8 @@ class BookingAudit extends Model
 
     public const ACTION_PPJB_CREATED = 'ppjb_created';
 
+    public const ACTION_AKAD_CREATED = 'akad_created';
+
     protected $fillable = [
         'project_id', 'booking_id', 'user_id', 'action', 'before', 'after', 'request_id',
     ];
@@ -71,7 +73,7 @@ class BookingAudit extends Model
 
     public static function snapshot(Booking $booking): array
     {
-        $booking->loadMissing(['psjb', 'pemberkasan', 'bankSubmissions.pemberkasan', 'ppjb']);
+        $booking->loadMissing(['psjb', 'pemberkasan', 'bankSubmissions.pemberkasan', 'ppjb', 'akad']);
 
         $snapshot = $booking->only([
             'project_id', 'lot_id', 'buyer_id', 'source_booking_key', 'psjb_number',
@@ -113,6 +115,12 @@ class BookingAudit extends Model
         $snapshot['ppjb'] = $booking->ppjb?->only([
             'id', 'booking_id', 'bank_submission_id', 'pemberkasan_id', 'ppjb_number', 'signed_date',
             'dp_status', 'withdrawn_flag', 'cancelled_flag', 'moved_lot_flag', 'name_change_flag',
+            'notes', 'source_owner',
+        ]);
+
+        $snapshot['akad'] = $booking->akad?->only([
+            'id', 'booking_id', 'ppjb_id', 'akad_number', 'akad_date', 'quality',
+            'withdrawn_flag', 'cancelled_flag', 'moved_lot_flag', 'name_change_flag',
             'notes', 'source_owner',
         ]);
 

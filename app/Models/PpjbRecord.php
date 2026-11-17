@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class PpjbRecord extends Model
 {
@@ -43,5 +44,10 @@ class PpjbRecord extends Model
     public function pemberkasan(): BelongsTo
     {
         return $this->belongsTo(PemberkasanRecord::class);
+    }
+
+    public function akad(): HasOne
+    {
+        return $this->hasOne(AkadRecord::class);
     }
 }
