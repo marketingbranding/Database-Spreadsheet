@@ -103,6 +103,9 @@ class ProjectImporter
     /** @var array<string, string> */
     private array $buyersByNik = [];
 
+    /** @var array<string, string> */
+    private array $hqPositions = [];
+
     private ?ImportBatch $batch = null;
 
     public function __construct(private readonly SheetReader $reader)
@@ -213,6 +216,12 @@ class ProjectImporter
             }
 
             $this->stats['ringkasan_rows'] = $this->optionalRowCount('Ringkasan Transaksi', $tabsByName, $rawTabs);
+            $conflictPreview = app(ImportConflictProjector::class)
+                ->preview($project, $this->issues, $rawTabs, $this->hqPositions);
+            $this->stats['conflict_projection'] = [
+                'total' => count($conflictPreview),
+                'by_case' => collect($conflictPreview)->countBy('case_type')->all(),
+            ];
 
             $this->stats['issues'] = $this->issueCounts();
             $this->stats['finished_at'] = now()->toIso8601String();
@@ -223,6 +232,8 @@ class ProjectImporter
                 $batchId = null;
             } else {
                 $this->persistIssues();
+                app(ImportConflictProjector::class)
+                    ->persist($project, $this->batch, $rawTabs, $this->hqPositions);
                 $this->batch->update([
                     'status' => 'completed',
                     'stats' => $this->stats,
@@ -283,6 +294,7 @@ class ProjectImporter
         $this->buyersByName = [];
         $this->buyersBySourceId = [];
         $this->buyersByNik = [];
+        $this->hqPositions = [];
         $this->batch = null;
     }
 
@@ -1577,6 +1589,10 @@ class ProjectImporter
 
             if ($idKavling && strtolower((string) $idKavling) !== 'id_kavling') {
                 $unitIds[] = $idKavling;
+                $code = Normalizer::lotCode($idKavling, $this->project->name);
+                if ($code && $position) {
+                    $this->hqPositions[$code] = strtoupper($position);
+                }
             }
             if ($position && strtolower((string) $position) === 'posisi_rumah') {
                 $unitHeaderSeen = true;
