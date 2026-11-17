@@ -123,6 +123,7 @@ class BookingController extends Controller
             ])))
             ->when($booking->bast, fn ($c, $r) => $c->push($this->entry('BAST', $r->bast_date, [
                 'No. BAST' => $r->bast_number,
+                'Sumber Akad' => $r->akad_id ? 'Akad #' . $r->akad_id : null,
                 'Catatan' => $r->notes,
             ])))
             ->sortBy(fn (array $entry) => [$entry['sort'] === '' ? 1 : 0, $entry['sort']])

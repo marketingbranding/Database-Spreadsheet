@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\BastController;
 use App\Http\Controllers\AkadController;
 use App\Http\Controllers\BiCheckController;
 use App\Http\Controllers\BookingController;
@@ -50,6 +51,9 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/projects/{project}/akad', [AkadController::class, 'index'])->name('akad.index');
     Route::get('/projects/{project}/akad/{booking}/create', [AkadController::class, 'create'])->name('akad.create');
     Route::post('/projects/{project}/akad/{booking}', [AkadController::class, 'store'])->name('akad.store');
+    Route::get('/projects/{project}/bast', [BastController::class, 'index'])->name('bast.index');
+    Route::get('/projects/{project}/bast/{booking}/create', [BastController::class, 'create'])->name('bast.create');
+    Route::post('/projects/{project}/bast/{booking}', [BastController::class, 'store'])->name('bast.store');
 
     Route::get('/inventory', [InventoryController::class, 'index'])->name('inventory.index');
 

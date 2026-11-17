@@ -29,6 +29,7 @@
                         <a href="{{ route('bank.index', request()->route('project')) }}" @class(['active' => request()->routeIs('bank.*')])>Proses Bank</a>
                         <a href="{{ route('ppjb.index', request()->route('project')) }}" @class(['active' => request()->routeIs('ppjb.*')])>TTD PPJB</a>
                         <a href="{{ route('akad.index', request()->route('project')) }}" @class(['active' => request()->routeIs('akad.*')])>Akad</a>
+                        <a href="{{ route('bast.index', request()->route('project')) }}" @class(['active' => request()->routeIs('bast.*')])>BAST</a>
                     @endif
                 @endif
                 <a href="{{ route('reconciliation.index') }}" @class(['active' => request()->routeIs('reconciliation.*')])>Rekonsiliasi</a>
