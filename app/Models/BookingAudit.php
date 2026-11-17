@@ -27,6 +27,8 @@ class BookingAudit extends Model
 
     public const ACTION_BAST_CREATED = 'bast_created';
 
+    public const ACTION_BOOKING_CHANGED = 'booking_changed';
+
     protected $fillable = [
         'project_id', 'booking_id', 'user_id', 'action', 'before', 'after', 'request_id',
     ];
@@ -92,7 +94,7 @@ class BookingAudit extends Model
 
         $snapshot['psjb'] = $booking->psjb?->only([
             'psjb_number', 'psjb_date', 'sales_name', 'coordinator_name', 'price',
-            'utj_date', 'utj_amount', 'dp_all_in', 'installment_count', 'payment_method',
+            'utj_date', 'utj_amount', 'utj_source_psjb_id', 'dp_all_in', 'installment_count', 'payment_method',
             'source_status', 'notes',
         ]);
 

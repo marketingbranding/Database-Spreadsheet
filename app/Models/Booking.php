@@ -108,6 +108,16 @@ class Booking extends Model
         return $this->hasMany(self::class, 'predecessor_booking_id');
     }
 
+    public function transition(): HasOne
+    {
+        return $this->hasOne(BookingTransition::class, 'successor_booking_id');
+    }
+
+    public function outgoingTransitions(): HasMany
+    {
+        return $this->hasMany(BookingTransition::class, 'source_booking_id');
+    }
+
     public function psjb(): HasOne
     {
         return $this->hasOne(PsjbRecord::class);

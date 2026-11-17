@@ -9,6 +9,7 @@ use App\Models\BastRecord;
 use App\Models\BiCheck;
 use App\Models\Booking;
 use App\Models\BookingAudit;
+use App\Models\BookingTransition;
 use App\Models\Buyer;
 use App\Models\Lot;
 use App\Models\Project;
@@ -122,6 +123,177 @@ class PsjbWorkflow
             ->with(['lot', 'buyer', 'biCheck'])
             ->orderBy('booking_date')
             ->orderBy('id');
+    }
+
+    public function changeName(User $actor, Booking $booking, array $input): Booking
+    {
+        return $this->changeBooking($actor, $booking, BookingTransition::ACTION_NAME_CHANGE, $input);
+    }
+
+    public function moveLot(User $actor, Booking $booking, array $input): Booking
+    {
+        return $this->changeBooking($actor, $booking, BookingTransition::ACTION_LOT_TRANSFER, $input);
+    }
+
+    private function changeBooking(User $actor, Booking $booking, string $action, array $input): Booking
+    {
+        $effectiveDate = Carbon::parse((string) ($input['effective_date'] ?? ''))->toDateString();
+        $reason = trim((string) ($input['reason'] ?? ''));
+        $idempotencyKey = trim((string) ($input['idempotency_key'] ?? ''));
+
+        if ($reason === '' || mb_strlen($reason) > 2000) {
+            throw new HttpException(422, 'Alasan perubahan wajib diisi.');
+        }
+        if ($idempotencyKey === '' || mb_strlen($idempotencyKey) > 255) {
+            throw new HttpException(422, 'Kunci idempotensi wajib diisi dan maksimal 255 karakter.');
+        }
+
+        $projectId = (int) $booking->project_id;
+
+        return DB::transaction(function () use ($actor, $booking, $action, $input, $effectiveDate, $reason, $idempotencyKey, $projectId): Booking {
+            $project = Project::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+            $source = Booking::query()->whereKey($booking->id)->lockForUpdate()->firstOrFail();
+            $this->authorizeWrite($actor, $project);
+
+            if ($source->project_id !== $project->id) {
+                throw new AccessDeniedHttpException('Booking tidak tersedia untuk perubahan ini.');
+            }
+
+            $fingerprint = $this->bookingChangeFingerprint($source, $action, $input, $effectiveDate, $reason);
+            $existing = BookingTransition::query()
+                ->where('idempotency_key', $idempotencyKey)
+                ->lockForUpdate()
+                ->first();
+            if ($existing) {
+                if (! hash_equals((string) $existing->source_hash, $fingerprint)) {
+                    throw new HttpException(409, 'Kunci idempotensi sudah dipakai untuk permintaan berbeda.');
+                }
+
+                return $existing->successorBooking()->with(['project', 'lot', 'buyer', 'psjb', 'transition'])->firstOrFail();
+            }
+
+            if ($source->status !== Booking::STATUS_ACTIVE) {
+                throw new AccessDeniedHttpException('Booking tidak tersedia untuk perubahan ini.');
+            }
+
+            $this->assertChangeBeforeSignedDocuments($source);
+            $sourceLot = Lot::query()->whereKey($source->lot_id)->where('project_id', $project->id)->lockForUpdate()->firstOrFail();
+            $destinationLot = $sourceLot;
+            $successorBuyer = $source->buyer_id;
+            $successorPrice = $source->base_price;
+
+            if ($action === BookingTransition::ACTION_NAME_CHANGE) {
+                $buyer = Buyer::query()->whereKey($input['buyer_id'] ?? 0)->first();
+                if (! $buyer || $buyer->id === $source->buyer_id || ! $this->buyerBelongsToProject($buyer, $project)) {
+                    throw new HttpException(422, 'Pembeli pengganti tidak valid untuk proyek ini.');
+                }
+                $successorBuyer = $buyer->id;
+            } else {
+                $destinationId = (int) ($input['lot_id'] ?? 0);
+                $destinationLot = Lot::query()->whereKey($destinationId)->where('project_id', $project->id)->lockForUpdate()->first();
+                if (! $destinationLot || $destinationLot->id === $sourceLot->id || $destinationLot->historical_akad_before_2026) {
+                    throw new HttpException(422, 'Kavling tujuan tidak valid untuk pindah kavling.');
+                }
+
+                $destinationPrice = $input['price'] ?? $source->base_price;
+                if ($destinationPrice !== null && ! is_numeric($destinationPrice)) {
+                    throw new HttpException(422, 'Harga kavling tujuan harus berupa angka.');
+                }
+                $successorPrice = $destinationPrice;
+                if ((float) ($successorPrice ?? 0) !== (float) ($source->base_price ?? 0)
+                    && ! filter_var($input['confirm_price_change'] ?? false, FILTER_VALIDATE_BOOL)) {
+                    throw new HttpException(422, 'Perubahan harga kavling tujuan harus dikonfirmasi.');
+                }
+
+                if ($this->validClaimQuery($destinationLot->id)->exists()) {
+                    throw new HttpException(409, 'Kavling tujuan sudah dialokasikan.');
+                }
+            }
+
+            $sourcePsjb = PsjbRecord::query()->where('booking_id', $source->id)->lockForUpdate()->first();
+            $beforeSource = BookingAudit::snapshot($source);
+            $source->update([
+                'status' => $action === BookingTransition::ACTION_NAME_CHANGE ? Booking::STATUS_REPLACED : Booking::STATUS_MOVED,
+                'decision_stage' => $source->current_stage,
+                'decision_date' => $effectiveDate,
+                'decision_note' => $reason,
+                'is_current_holder' => false,
+                'source_owner' => Booking::OWNER_LARAVEL,
+            ]);
+
+            $successor = Booking::query()->create([
+                'project_id' => $project->id,
+                'lot_id' => $destinationLot->id,
+                'buyer_id' => $successorBuyer,
+                'source_booking_key' => 'LARAVEL:CHANGE:' . (string) Str::uuid(),
+                'source_transaction_id' => $source->source_transaction_id,
+                'psjb_number' => $sourcePsjb?->psjb_number,
+                'booking_date' => $effectiveDate,
+                'payment_method' => $source->payment_method,
+                'sales_name' => $source->sales_name,
+                'coordinator_name' => $source->coordinator_name,
+                'base_price' => $successorPrice,
+                'status' => Booking::STATUS_ACTIVE,
+                'current_stage' => Booking::STAGE_PSJB,
+                'predecessor_booking_id' => $source->id,
+                'transfer_type' => $action === BookingTransition::ACTION_NAME_CHANGE ? 'GANTI_NAMA' : 'PINDAH_KAVLING',
+                'is_current_holder' => true,
+                'source_owner' => Booking::OWNER_LARAVEL,
+                'source_tab' => 'Laravel',
+            ]);
+
+            if ($sourcePsjb) {
+                PsjbRecord::query()->create([
+                    'booking_id' => $successor->id,
+                    'project_id' => $project->id,
+                    'source_key' => $successor->source_booking_key . ':PSJB',
+                    'psjb_number' => $sourcePsjb->psjb_number,
+                    'psjb_date' => $effectiveDate,
+                    'sales_name' => $sourcePsjb->sales_name,
+                    'coordinator_name' => $sourcePsjb->coordinator_name,
+                    'price' => $successorPrice,
+                    'utj_date' => $sourcePsjb->utj_date,
+                    'utj_amount' => $sourcePsjb->utj_amount,
+                    'utj_source_psjb_id' => $sourcePsjb->utj_source_psjb_id ?: $sourcePsjb->id,
+                    'dp_all_in' => $sourcePsjb->dp_all_in,
+                    'installment_count' => $sourcePsjb->installment_count,
+                    'payment_method' => $sourcePsjb->payment_method,
+                    'source_status' => 'ACTIVE',
+                    'notes' => $sourcePsjb->notes,
+                    'source_tab' => 'Laravel',
+                ]);
+            }
+
+            $transition = BookingTransition::query()->create([
+                'project_id' => $project->id,
+                'source_booking_id' => $source->id,
+                'successor_booking_id' => $successor->id,
+                'user_id' => $actor->id,
+                'action' => $action,
+                'effective_date' => $effectiveDate,
+                'reason' => $reason,
+                'idempotency_key' => $idempotencyKey,
+                'source_owner' => BookingTransition::OWNER_LARAVEL,
+                'source_key' => $successor->source_booking_key . ':TRANSITION',
+                'source_hash' => $fingerprint,
+                'payload' => [
+                    'source_booking_id' => $source->id,
+                    'successor_booking_id' => $successor->id,
+                    'action' => $action,
+                    'effective_date' => $effectiveDate,
+                    'reason' => $reason,
+                    'source_lot_id' => $sourceLot->id,
+                    'destination_lot_id' => $destinationLot->id,
+                    'source_buyer_id' => $source->buyer_id,
+                    'successor_buyer_id' => $successorBuyer,
+                ],
+            ]);
+
+            BookingAudit::record($source->fresh(['psjb']), $actor, BookingAudit::ACTION_BOOKING_CHANGED, $beforeSource, BookingAudit::snapshot($source->fresh(['psjb'])), $this->requestId());
+            BookingAudit::record($successor->fresh(['psjb', 'transition']), $actor, BookingAudit::ACTION_BOOKING_CHANGED, null, BookingAudit::snapshot($successor->fresh(['psjb'])), $this->requestId());
+
+            return $successor->fresh(['project', 'lot', 'buyer', 'psjb', 'transition']);
+        }, 3);
     }
 
     public function recordBiCheck(User $actor, Booking $booking, array $input): Booking
@@ -1162,6 +1334,38 @@ class PsjbWorkflow
 
         $latest = BiCheck::query()->where('booking_id', $booking->id)->latest('updated_at')->latest('id')->first();
         return $latest?->source_owner === BiCheck::OWNER_LARAVEL && $latest->decision === 'LANJUT';
+    }
+
+    private function assertChangeBeforeSignedDocuments(Booking $booking): void
+    {
+        if ($booking->ppjb()->exists() || $booking->akad()->exists() || $booking->bast()->exists()) {
+            throw new HttpException(422, 'Ganti nama atau pindah kavling setelah dokumen ditandatangani masih dikelola melalui Sheets.');
+        }
+    }
+
+    private function buyerBelongsToProject(Buyer $buyer, Project $project): bool
+    {
+        return str_starts_with((string) $buyer->source_key, $project->code . ':')
+            || $buyer->bookings()->where('project_id', $project->id)->exists();
+    }
+
+    private function bookingChangeFingerprint(
+        Booking $source,
+        string $action,
+        array $input,
+        string $effectiveDate,
+        string $reason,
+    ): string {
+        return hash('sha256', json_encode([
+            'source_booking_id' => $source->id,
+            'action' => $action,
+            'buyer_id' => $input['buyer_id'] ?? null,
+            'lot_id' => $input['lot_id'] ?? null,
+            'price' => $input['price'] ?? null,
+            'confirm_price_change' => filter_var($input['confirm_price_change'] ?? false, FILTER_VALIDATE_BOOL),
+            'effective_date' => $effectiveDate,
+            'reason' => $reason,
+        ], JSON_THROW_ON_ERROR));
     }
 
     public function withdraw(User $actor, Booking $booking, ?string $note = null): Booking

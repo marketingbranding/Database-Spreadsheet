@@ -9,7 +9,7 @@ class PsjbRecord extends Model
 {
     protected $fillable = [
         'booking_id', 'project_id', 'source_key', 'psjb_number', 'psjb_date',
-        'sales_name', 'coordinator_name', 'price', 'utj_date', 'utj_amount',
+        'sales_name', 'coordinator_name', 'price', 'utj_date', 'utj_amount', 'utj_source_psjb_id',
         'dp_all_in', 'installment_count', 'payment_method', 'source_status',
         'notes', 'source_tab', 'source_row', 'source_hash',
     ];
@@ -29,5 +29,10 @@ class PsjbRecord extends Model
     public function booking(): BelongsTo
     {
         return $this->belongsTo(Booking::class);
+    }
+
+    public function utjSource(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'utj_source_psjb_id');
     }
 }
