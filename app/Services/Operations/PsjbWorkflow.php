@@ -3,6 +3,7 @@
 namespace App\Services\Operations;
 
 use App\Exceptions\LotAllocationConflict;
+use App\Models\AkadRecord;
 use App\Models\BankSubmission;
 use App\Models\BiCheck;
 use App\Models\Booking;
@@ -491,6 +492,168 @@ class PsjbWorkflow
         }, 3);
     }
 
+    public function eligibleAkadBookings(Project $project): Builder
+    {
+        return Booking::query()
+            ->where('project_id', $project->id)
+            ->where('status', Booking::STATUS_ACTIVE)
+            ->where('current_stage', Booking::STAGE_PPJB)
+            ->whereDoesntHave('akad')
+            ->whereHas('ppjb', function (Builder $query) use ($project): void {
+                $query->where('project_id', $project->id)
+                    ->where('withdrawn_flag', false)
+                    ->where('cancelled_flag', false);
+            })
+            ->with(['lot', 'buyer', 'ppjb'])
+            ->orderBy('booking_date')
+            ->orderBy('id');
+    }
+
+    public function recordAkad(User $actor, Booking $booking, array $input): AkadRecord
+    {
+        [$ppjbId, $akadNumber, $akadDate, $quality, $notes, $idempotencyKey] = $this->akadPayload($input);
+        $project = Project::query()->whereKey($booking->project_id)->firstOrFail();
+        $this->authorizeAkadWrite($actor, $project);
+
+        return DB::transaction(function () use (
+            $actor, $booking, $project, $ppjbId, $akadNumber, $akadDate, $quality, $notes, $idempotencyKey,
+        ): AkadRecord {
+            $project = Project::query()->whereKey($project->id)->lockForUpdate()->firstOrFail();
+            $this->authorizeAkadWrite($actor, $project);
+
+            $booking = Booking::query()->whereKey($booking->id)->lockForUpdate()->firstOrFail();
+            Lot::query()->whereKey($booking->lot_id)->lockForUpdate()->firstOrFail();
+            $ppjb = PpjbRecord::query()->whereKey($ppjbId)->lockForUpdate()->first();
+
+            $fingerprint = $this->akadFingerprint($booking->id, $ppjbId, $akadNumber, $akadDate, $quality, $notes);
+            $existing = AkadRecord::query()->where('idempotency_key', $idempotencyKey)->lockForUpdate()->first();
+            if ($existing) {
+                if (! hash_equals((string) $existing->source_hash, $fingerprint)) {
+                    throw new HttpException(409, 'Kunci idempotensi sudah dipakai untuk permintaan berbeda.');
+                }
+
+                return $existing->fresh(['booking', 'ppjb']);
+            }
+
+            $this->assertAkadEligible($booking, $project, $ppjb);
+
+            if (AkadRecord::query()->where('booking_id', $booking->id)->exists()) {
+                throw new HttpException(409, 'Booking ini sudah memiliki Akad.');
+            }
+
+            $before = BookingAudit::snapshot($booking);
+            $record = AkadRecord::query()->create([
+                'booking_id' => $booking->id,
+                'ppjb_id' => $ppjb->id,
+                'project_id' => $project->id,
+                'source_key' => 'LARAVEL:AKAD:' . (string) Str::uuid(),
+                'akad_number' => $akadNumber,
+                'akad_date' => $akadDate,
+                'quality' => $quality,
+                'withdrawn_flag' => false,
+                'cancelled_flag' => false,
+                'moved_lot_flag' => false,
+                'name_change_flag' => false,
+                'notes' => $notes,
+                'source_owner' => AkadRecord::OWNER_LARAVEL,
+                'idempotency_key' => $idempotencyKey,
+                'source_tab' => 'Laravel',
+                'source_hash' => $fingerprint,
+            ]);
+            $booking->update([
+                'current_stage' => Booking::STAGE_AKAD,
+                'akad_date' => $akadDate,
+                'source_owner' => Booking::OWNER_LARAVEL,
+            ]);
+            BookingAudit::record(
+                $booking->fresh(),
+                $actor,
+                BookingAudit::ACTION_AKAD_CREATED,
+                $before,
+                BookingAudit::snapshot($booking->fresh()),
+                $this->requestId(),
+            );
+
+            return $record->fresh(['booking', 'ppjb']);
+        }, 3);
+    }
+
+    private function assertAkadEligible(Booking $booking, Project $project, ?PpjbRecord $ppjb): void
+    {
+        if ($booking->project_id !== $project->id) {
+            throw new AccessDeniedHttpException('Booking tidak sesuai dengan proyek ini.');
+        }
+        if ($booking->status !== Booking::STATUS_ACTIVE) {
+            throw new HttpException(422, 'Booking harus berstatus Aktif untuk Akad.');
+        }
+        if ($booking->current_stage !== Booking::STAGE_PPJB) {
+            throw new HttpException(422, 'Booking belum berada pada tahap PPJB.');
+        }
+        if (! $ppjb || $ppjb->booking_id !== $booking->id || $ppjb->project_id !== $project->id) {
+            throw new AccessDeniedHttpException('PPJB tidak sesuai dengan booking atau proyek ini.');
+        }
+        if ($ppjb->withdrawn_flag || $ppjb->cancelled_flag) {
+            throw new HttpException(422, 'PPJB yang dipilih tidak berstatus aktif.');
+        }
+    }
+
+    private function akadPayload(array $input): array
+    {
+        $akadNumber = trim((string) ($input['akad_number'] ?? ''));
+        $quality = trim((string) ($input['quality'] ?? ''));
+        $idempotencyKey = trim((string) ($input['idempotency_key'] ?? ''));
+        $validator = Validator::make(
+            [
+                'akad_number' => $akadNumber,
+                'akad_date' => $input['akad_date'] ?? null,
+                'quality' => $quality,
+                'idempotency_key' => $idempotencyKey,
+            ],
+            [
+                'akad_number' => ['required', 'string', 'max:96'],
+                'akad_date' => ['required', 'date'],
+                'quality' => ['required', 'string', 'max:64'],
+                'idempotency_key' => ['required', 'string', 'max:255'],
+            ],
+        );
+        if ($validator->fails()) {
+            throw new HttpException(422, 'Data Akad tidak valid.');
+        }
+
+        $ppjbId = $input['ppjb_id'] ?? null;
+        if (! $ppjbId) {
+            throw new HttpException(422, 'PPJB sumber wajib dipilih.');
+        }
+        $notes = trim((string) ($input['notes'] ?? ''));
+
+        return [
+            (int) $ppjbId,
+            $akadNumber,
+            Carbon::parse($input['akad_date'])->toDateString(),
+            $quality,
+            $notes === '' ? null : $notes,
+            $idempotencyKey,
+        ];
+    }
+
+    private function akadFingerprint(
+        int $bookingId,
+        int $ppjbId,
+        string $akadNumber,
+        string $akadDate,
+        string $quality,
+        ?string $notes,
+    ): string {
+        return hash('sha256', json_encode([
+            'booking_id' => $bookingId,
+            'ppjb_id' => $ppjbId,
+            'akad_number' => $akadNumber,
+            'akad_date' => $akadDate,
+            'quality' => $quality,
+            'notes' => $notes,
+        ], JSON_THROW_ON_ERROR));
+    }
+
     private function assertPpjbEligible(Booking $booking, Project $project, ?BankSubmission $bankSubmission, ?PemberkasanRecord $pemberkasan): void
     {
         if ($booking->project_id !== $project->id) {
@@ -602,6 +765,11 @@ class PsjbWorkflow
     private function authorizePpjbWrite(User $actor, Project $project): void
     {
         $this->authorizePilotWrite($actor, $project, 'TTD PPJB hanya tersedia untuk proyek pilot.');
+    }
+
+    private function authorizeAkadWrite(User $actor, Project $project): void
+    {
+        $this->authorizePilotWrite($actor, $project, 'Akad hanya tersedia untuk proyek pilot.');
     }
 
     private function authorizePilotWrite(User $actor, Project $project, string $message): void
