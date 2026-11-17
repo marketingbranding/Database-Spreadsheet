@@ -11,6 +11,7 @@ use App\Models\Booking;
 use App\Models\BookingAudit;
 use App\Models\BookingTransition;
 use App\Models\Buyer;
+use App\Models\ImportConflict;
 use App\Models\Lot;
 use App\Models\Project;
 use App\Models\PemberkasanRecord;
@@ -47,6 +48,16 @@ class PsjbWorkflow
             ->where('project_id', $project->id)
             ->where('historical_akad_before_2026', false)
             ->whereDoesntHave('bookings', fn (Builder $query) => $query->whereIn('status', self::VALID_CLAIM_STATUSES))
+            ->whereDoesntHave('importConflicts', fn (Builder $query) => $query
+                ->whereIn('case_type', [
+                    ImportConflict::CASE_COMPETING_CLAIMS,
+                    ImportConflict::CASE_STOCK_DISAGREEMENT,
+                ])
+                ->whereIn('status', [
+                    ImportConflict::STATUS_OPEN,
+                    ImportConflict::STATUS_PROPOSED,
+                    ImportConflict::STATUS_ESCALATED,
+                ]))
             ->orderBy('code');
     }
 
@@ -65,6 +76,9 @@ class PsjbWorkflow
 
             $lot = Lot::query()->whereKey($input['lot_id'])->where('project_id', $project->id)->lockForUpdate()->first();
             if (! $lot || $lot->historical_akad_before_2026 || $this->validClaimQuery($lot->id)->exists()) {
+                throw new LotAllocationConflict;
+            }
+            if (ImportConflict::openAllocationDisputesForLot($project->id, $lot->id)->exists()) {
                 throw new LotAllocationConflict;
             }
 
@@ -1378,39 +1392,160 @@ class PsjbWorkflow
         return $this->decide($actor, $booking, Booking::STATUS_BATAL, BookingAudit::ACTION_CANCELLED, $note);
     }
 
+    public function applyConflictClaimResolution(User $actor, Project $project, array $input): array
+    {
+        $this->assertConflictResolutionActor($actor, $project);
+        $conflictId = (int) ($input['conflict_id'] ?? 0);
+        $currentId = (int) ($input['current_booking_id'] ?? 0);
+        $dispositions = (array) ($input['dispositions'] ?? []);
+        $reason = trim((string) ($input['reason'] ?? ''));
+        $sourceReference = trim((string) ($input['source_reference'] ?? ''));
+
+        return DB::transaction(function () use (
+            $actor,
+            $project,
+            $conflictId,
+            $currentId,
+            $dispositions,
+            $reason,
+            $sourceReference,
+        ): array {
+            $lockedProject = Project::query()->whereKey($project->id)->lockForUpdate()->firstOrFail();
+            $conflict = ImportConflict::query()
+                ->whereKey($conflictId)
+                ->where('project_id', $lockedProject->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $linkedIds = $conflict->bookingLinks()->pluck('booking_id')->map(fn ($id) => (int) $id)->all();
+            $affectedIds = array_values(array_unique([...array_keys($dispositions), ...($currentId ? [$currentId] : [])]));
+            sort($affectedIds);
+            foreach ($affectedIds as $id) {
+                if (! in_array($id, $linkedIds, true)) {
+                    throw new HttpException(409, 'Booking yang diajukan tidak termasuk siklus konflik ini.');
+                }
+            }
+
+            $bookings = Booking::query()
+                ->where('project_id', $lockedProject->id)
+                ->whereIn('id', $affectedIds)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+            if ($bookings->count() !== count($affectedIds)) {
+                throw new HttpException(409, 'Siklus booking konflik tidak lengkap.');
+            }
+            foreach ($bookings as $booking) {
+                if ($booking->ppjb || $booking->akad || $booking->bast) {
+                    throw new HttpException(422, 'Dokumen tertanda mencegah koreksi konflik ini.');
+                }
+            }
+
+            $before = $bookings->map(fn (Booking $booking) => BookingAudit::snapshot($booking))->all();
+
+            foreach ($dispositions as $bookingId => $status) {
+                $booking = $bookings->get((int) $bookingId);
+                if (! $booking) {
+                    throw new HttpException(409, 'Booking yang diajukan tidak termasuk siklus konflik ini.');
+                }
+                $this->applyDecision(
+                    $actor,
+                    $booking,
+                    $status,
+                    $status === Booking::STATUS_MUNDUR
+                        ? BookingAudit::ACTION_WITHDRAWN
+                        : BookingAudit::ACTION_CANCELLED,
+                    trim($reason.' '.($sourceReference !== '' ? 'Ref: '.$sourceReference : '')),
+                    allowHq: true
+                );
+            }
+
+            if ($currentId) {
+                $current = $bookings->get($currentId);
+                if (! in_array($current->status, self::VALID_CLAIM_STATUSES, true)) {
+                    throw new HttpException(409, 'Holder baru bukan klaim yang valid.');
+                }
+                Booking::query()
+                    ->where('lot_id', $current->lot_id)
+                    ->whereKeyNot($current->id)
+                    ->whereIn('status', self::VALID_CLAIM_STATUSES)
+                    ->update(['is_current_holder' => false]);
+                $current->update(['is_current_holder' => true]);
+                BookingAudit::record(
+                    $current->fresh(),
+                    $actor,
+                    BookingAudit::ACTION_IMPORT_CONFLICT_RESOLVED,
+                    $before[$current->id] ?? null,
+                    BookingAudit::snapshot($current->fresh()),
+                    $sourceReference !== '' ? $sourceReference : $this->requestId()
+                );
+            }
+
+            $holderCount = $this->validClaimQuery($bookings->first()->lot_id)
+                ->where('is_current_holder', true)
+                ->count();
+            if ($holderCount > 1) {
+                throw new HttpException(409, 'Lebih dari satu current holder masih tersisa.');
+            }
+
+            return [
+                'before' => $before,
+                'after' => $bookings->map(fn (Booking $booking) => BookingAudit::snapshot($booking->fresh()))->all(),
+                'resolution_type' => ImportConflict::RESOLUTION_CORRECT_LARAVEL,
+            ];
+        }, 3);
+    }
+
     private function decide(User $actor, Booking $booking, string $status, string $action, ?string $note): Booking
     {
-        return DB::transaction(function () use ($actor, $booking, $status, $action, $note): Booking {
-            $project = Project::query()->whereKey($booking->project_id)->lockForUpdate()->firstOrFail();
-            $locked = Booking::query()->whereKey($booking->id)->lockForUpdate()->firstOrFail();
+        return DB::transaction(
+            fn (): Booking => $this->applyDecision($actor, $booking, $status, $action, $note),
+            3
+        );
+    }
+
+    private function applyDecision(
+        User $actor,
+        Booking $booking,
+        string $status,
+        string $action,
+        ?string $note,
+        bool $allowHq = false,
+    ): Booking {
+        $project = Project::query()->whereKey($booking->project_id)->lockForUpdate()->firstOrFail();
+        $locked = Booking::query()->whereKey($booking->id)->lockForUpdate()->firstOrFail();
+        if ($allowHq) {
+            $this->authorizeConflictWrite($actor, $project);
+        } else {
             $this->authorizeWrite($actor, $project);
+        }
 
-            if (! in_array($locked->status, [Booking::STATUS_ACTIVE, Booking::STATUS_NEEDS_REVIEW], true)) {
-                throw new HttpException(422, 'Booking sudah memiliki keputusan dan tidak dapat diubah.');
-            }
+        if (! in_array($locked->status, [Booking::STATUS_ACTIVE, Booking::STATUS_NEEDS_REVIEW], true)) {
+            throw new HttpException(422, 'Booking sudah memiliki keputusan dan tidak dapat diubah.');
+        }
 
-            $before = BookingAudit::snapshot($locked);
-            Lot::query()->whereKey($locked->lot_id)->lockForUpdate()->firstOrFail();
-            $locked->update([
-                'status' => $status,
-                'decision_stage' => in_array($locked->current_stage, [Booking::STAGE_BI, Booking::STAGE_PEMBERKASAN], true) ? $locked->current_stage : Booking::STAGE_PSJB,
-                'decision_date' => now($project->timezone)->toDateString(),
-                'decision_note' => $note,
-                'is_current_holder' => false,
-                'source_owner' => Booking::OWNER_LARAVEL,
-            ]);
+        $before = BookingAudit::snapshot($locked);
+        Lot::query()->whereKey($locked->lot_id)->lockForUpdate()->firstOrFail();
+        $locked->update([
+            'status' => $status,
+            'decision_stage' => in_array($locked->current_stage, [Booking::STAGE_BI, Booking::STAGE_PEMBERKASAN], true) ? $locked->current_stage : Booking::STAGE_PSJB,
+            'decision_date' => now($project->timezone)->toDateString(),
+            'decision_note' => $note,
+            'is_current_holder' => false,
+            'source_owner' => Booking::OWNER_LARAVEL,
+        ]);
 
-            $claims = $this->validClaimQuery($locked->lot_id)->lockForUpdate()->get();
-            if ($claims->count() === 1) {
-                $claims->first()->update(['is_current_holder' => true]);
-            } elseif ($claims->count() > 1) {
-                $claims->each->update(['is_current_holder' => false]);
-            }
+        $claims = $this->validClaimQuery($locked->lot_id)->lockForUpdate()->get();
+        if ($claims->count() === 1) {
+            $claims->first()->update(['is_current_holder' => true]);
+        } elseif ($claims->count() > 1) {
+            $claims->each->update(['is_current_holder' => false]);
+        }
 
-            BookingAudit::record($locked, $actor, $action, $before, BookingAudit::snapshot($locked), $this->requestId());
+        BookingAudit::record($locked, $actor, $action, $before, BookingAudit::snapshot($locked), $this->requestId());
 
-            return $locked->fresh(['project', 'lot', 'buyer', 'psjb']);
-        }, 3);
+        return $locked->fresh(['project', 'lot', 'buyer', 'psjb']);
     }
 
     private function requestId(): string
@@ -1457,6 +1592,39 @@ class PsjbWorkflow
             'phone_encrypted' => Normalizer::text($input['phone'] ?? null),
             'source_tab' => 'Laravel',
         ]);
+    }
+
+    private function authorizeConflictWrite(User $actor, Project $project): void
+    {
+        if (
+            ! $actor->is_active
+            || ! ($actor->isHq() || $actor->role === User::ROLE_BRANCH_ADMIN)
+            || ! $actor->canAccessProject($project)
+        ) {
+            throw new AccessDeniedHttpException('Actor is not permitted to apply a conflict resolution.');
+        }
+        if (config('app.env') !== 'staging' || ! filter_var(env('MARISON_OPERATIONAL_WRITES', false), FILTER_VALIDATE_BOOL)) {
+            throw new HttpException(403, 'Operational writes are disabled outside staging.');
+        }
+        if ($project->management_mode !== Project::MANAGEMENT_LARAVEL) {
+            throw new HttpException(422, 'Project masih dikelola melalui Sheets.');
+        }
+    }
+
+    private function assertConflictResolutionActor(User $actor, Project $project): void
+    {
+        if (! $actor->is_active || ! $actor->isHq() || ! $actor->canAccessProject($project)) {
+            throw new AccessDeniedHttpException('Only HQ may apply import conflict resolutions.');
+        }
+        if (config('app.env') !== 'staging' || ! filter_var(env('MARISON_OPERATIONAL_WRITES', false), FILTER_VALIDATE_BOOL)) {
+            throw new HttpException(403, 'Operational writes are disabled outside staging.');
+        }
+        if (! in_array($project->code, self::PILOT_PROJECT_CODES, true)) {
+            throw new AccessDeniedHttpException('Import conflict resolutions are limited to pilot projects.');
+        }
+        if ($project->management_mode !== Project::MANAGEMENT_LARAVEL) {
+            throw new HttpException(422, 'Project masih dikelola melalui Sheets.');
+        }
     }
 
     private function authorizeWrite(User $actor, Project $project): void

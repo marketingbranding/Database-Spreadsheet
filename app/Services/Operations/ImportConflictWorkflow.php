@@ -2,11 +2,15 @@
 
 namespace App\Services\Operations;
 
+use App\Models\BiCheck;
+use App\Models\Booking;
 use App\Models\ImportConflict;
+use App\Models\ImportConflictBooking;
 use App\Models\ImportConflictEvent;
 use App\Models\ImportConflictProposal;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\Normalizer;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +19,8 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class ImportConflictWorkflow
 {
+    public function __construct(private readonly PsjbWorkflow $psjbWorkflow) {}
+
     private const PILOT_PROJECT_CODES = ['PRJ-JPR-KWS', 'PRJ-MGL-KLG'];
 
     private const CASE_ACTIONS = [
@@ -165,9 +171,9 @@ class ImportConflictWorkflow
                 ImportConflictProposal::ACTION_CONFIRM_LARAVEL => $this->confirmLaravel($conflict),
                 ImportConflictProposal::ACTION_ESCALATE_SIGNED_DOCUMENT => $this->escalateSignedDocument($conflict),
                 ImportConflictProposal::ACTION_ROUTE_BOOKING_DECISION => $this->routeBookingDecision($conflict),
-                ImportConflictProposal::ACTION_LINK_BI => $this->applyLinkBi($hq, $conflict, $proposedValues),
+                ImportConflictProposal::ACTION_LINK_BI => $this->applyLinkBi($lockedProposal, $hq, $conflict),
                 ImportConflictProposal::ACTION_CORRECT_LARAVEL,
-                ImportConflictProposal::ACTION_SELECT_CURRENT_CLAIM => $this->applyCorrection($hq, $conflict, $proposedValues),
+                ImportConflictProposal::ACTION_SELECT_CURRENT_CLAIM => $this->applyCorrection($lockedProposal, $hq, $conflict),
                 default => throw new HttpException(422, 'Aksi resolusi tidak didukung.'),
             };
 
@@ -191,7 +197,19 @@ class ImportConflictWorkflow
                 'source_reference' => $lockedProposal->source_reference,
                 'source_fingerprint' => $conflict->source_fingerprint,
                 'before' => $before,
-                'after' => $this->conflictBefore($conflict->fresh()),
+                'after' => [
+                    ...$this->conflictBefore($conflict->fresh()),
+                    'approval' => [
+                        'action' => $lockedProposal->action,
+                        'proposed_by' => $lockedProposal->proposed_by,
+                        'approved_by' => $hq->id,
+                        'approval_reason' => $approvalReason,
+                        'reason' => $lockedProposal->reason,
+                        'evidence' => $lockedProposal->evidence,
+                        'source_reference' => $lockedProposal->source_reference,
+                    ],
+                    'resolution' => $result,
+                ],
             ]);
 
             return $conflict->fresh();
@@ -280,14 +298,94 @@ class ImportConflictWorkflow
         ];
     }
 
-    private function applyLinkBi(User $hq, ImportConflict $conflict, array $values): array
+    private function applyLinkBi(ImportConflictProposal $proposal, User $hq, ImportConflict $conflict): array
     {
-        throw new HttpException(422, 'Laravel-owned BI linkage is completed in the resolution execution step.');
+        $values = (array) ($proposal->proposed_values ?? []);
+        $bookingId = (int) ($values['booking_id'] ?? 0);
+        if ($bookingId <= 0) {
+            throw new HttpException(409, 'Pilih siklus booking yang tepat untuk BI.');
+        }
+
+        $linked = ImportConflictBooking::query()
+            ->where('import_conflict_id', $conflict->id)
+            ->where('booking_id', $bookingId)
+            ->exists();
+        if (! $linked) {
+            throw new HttpException(409, 'Booking BI tidak termasuk bukti konflik ini.');
+        }
+
+        $booking = Booking::query()
+            ->whereKey($bookingId)
+            ->where('project_id', $conflict->project_id)
+            ->lockForUpdate()
+            ->firstOrFail();
+        if ($booking->ppjb || $booking->akad || $booking->bast) {
+            throw new HttpException(422, 'Dokumen tertanda mencegah perubahan linkage BI.');
+        }
+        if (BiCheck::query()
+            ->where('booking_id', $booking->id)
+            ->where('source_owner', BiCheck::OWNER_LARAVEL)
+            ->exists()) {
+            throw new HttpException(409, 'Booking sudah memiliki BI milik Laravel.');
+        }
+
+        $source = (array) ($conflict->source_value ?? []);
+        $result = (string) ($source['Hasil SLIK'] ?? $source['[AUTO] Status Konsumen'] ?? '');
+        $decisionRaw = strtoupper(trim((string) ($source['Keputusan'] ?? $source['[AUTO] Status Transaksi'] ?? '')));
+        $decision = in_array($decisionRaw, ['LANJUT', 'OK'], true) ? 'LANJUT' : 'TIDAK LANJUT';
+        $checkDate = Normalizer::date($source['Tanggal BI'] ?? null)?->toDateString();
+
+        $this->psjbWorkflow->recordBiCheck($proposal->proposer, $booking, [
+            'bi_number' => $source['[SYS] ID BI'] ?? $source['[SYS] ID Transaksi'] ?? null,
+            'check_date' => $checkDate,
+            'result' => $result !== '' ? $result : null,
+            'decision' => $decision,
+            'notes' => 'Konflik impor: '.($proposal->source_reference ?: 'BI Checking'),
+        ]);
+
+        $conflict->update([
+            'status' => ImportConflict::STATUS_RESOLVED,
+            'reviewed_source_fingerprint' => $conflict->source_fingerprint,
+            'resolution_type' => ImportConflict::RESOLUTION_LINK_BI,
+            'resolved_at' => now(),
+            'resolved_by' => $hq->id,
+        ]);
+
+        return [
+            'resolution_type' => ImportConflict::RESOLUTION_LINK_BI,
+            'booking_id' => $booking->id,
+            'before_bi_owner' => BiCheck::query()->where('booking_id', $booking->id)->value('source_owner'),
+        ];
     }
 
-    private function applyCorrection(User $hq, ImportConflict $conflict, array $values): array
+    private function applyCorrection(ImportConflictProposal $proposal, User $hq, ImportConflict $conflict): array
     {
-        throw new HttpException(422, 'Laravel allocation correction is completed in the resolution execution step.');
+        if (in_array($conflict->case_type, [
+            ImportConflict::CASE_SIGNED_DOCUMENT,
+            ImportConflict::CASE_UNLINKED_BI,
+            ImportConflict::CASE_BANK_REJECT,
+        ], true)) {
+            throw new HttpException(422, 'Koreksi alokasi tidak tersedia untuk jenis konflik ini.');
+        }
+
+        $values = (array) ($proposal->proposed_values ?? []);
+        $result = $this->psjbWorkflow->applyConflictClaimResolution($hq, $conflict->project, [
+            'conflict_id' => $conflict->id,
+            'current_booking_id' => $values['current_booking_id'] ?? null,
+            'dispositions' => $values['dispositions'] ?? [],
+            'reason' => $proposal->reason,
+            'source_reference' => $proposal->source_reference ?: ($conflict->source_tab ?? 'import'),
+        ]);
+
+        $conflict->update([
+            'status' => ImportConflict::STATUS_RESOLVED,
+            'reviewed_source_fingerprint' => $conflict->source_fingerprint,
+            'resolution_type' => ImportConflict::RESOLUTION_CORRECT_LARAVEL,
+            'resolved_at' => now(),
+            'resolved_by' => $hq->id,
+        ]);
+
+        return $result;
     }
 
     private function assertActive(User $actor): void
