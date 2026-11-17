@@ -76,6 +76,12 @@ class ProjectImporter
     /** @var array<int, bool> */
     private array $laravelPpjbBookingIds = [];
 
+    /** @var array<int, bool> */
+    private array $laravelAkadBookingIds = [];
+
+    /** @var array<string, bool> */
+    private array $protectedAkadBookings = [];
+
     /** @var array<string, bool> */
     private array $protectedPpjbBookings = [];
 
@@ -150,6 +156,14 @@ class ProjectImporter
                 PpjbRecord::query()
                     ->where('project_id', $project->id)
                     ->where('source_owner', PpjbRecord::OWNER_LARAVEL)
+                    ->pluck('booking_id')
+                    ->all(),
+                true
+            );
+            $this->laravelAkadBookingIds = array_fill_keys(
+                AkadRecord::query()
+                    ->where('project_id', $project->id)
+                    ->where('source_owner', AkadRecord::OWNER_LARAVEL)
                     ->pluck('booking_id')
                     ->all(),
                 true
@@ -247,6 +261,8 @@ class ProjectImporter
         $this->laravelBankBookingIds = [];
         $this->protectedPpjbBookings = [];
         $this->laravelPpjbBookingIds = [];
+        $this->protectedAkadBookings = [];
+        $this->laravelAkadBookingIds = [];
         $this->lots = [];
         $this->buyersByName = [];
         $this->buyersBySourceId = [];
@@ -1033,8 +1049,22 @@ class ProjectImporter
                 continue;
             }
 
+            $bookingId = $this->bookingRows[$bookingKey]['booking']->id;
+            $ppjbReference = $reference ?: $tab->text($row, ['Pilih PPJB']);
+            $ppjb = $ppjbReference
+                ? PpjbRecord::query()
+                    ->where('booking_id', $bookingId)
+                    ->where('project_id', $this->project->id)
+                    ->where(function ($query) use ($ppjbReference): void {
+                        $query->where('ppjb_number', $ppjbReference)
+                            ->orWhere('source_key', 'PPJB:' . $ppjbReference);
+                    })
+                    ->first()
+                : null;
+
             $attributes = [
-                'booking_id' => $this->bookingRows[$bookingKey]['booking']->id,
+                'booking_id' => $bookingId,
+                'ppjb_id' => $ppjb?->id,
                 'project_id' => $this->project->id,
                 'source_key' => 'AKAD:' . $number,
                 'akad_number' => $number,
@@ -1045,10 +1075,25 @@ class ProjectImporter
                 'moved_lot_flag' => $tab->flag($row, ['Pindah Kavling']),
                 'name_change_flag' => $tab->flag($row, ['Ganti Nama']),
                 'notes' => $tab->text($row, ['Catatan Keterlambatan', 'Keterangan']),
+                'source_owner' => AkadRecord::OWNER_SHEETS,
                 'source_tab' => 'Akad',
                 'source_row' => $rowNumber,
                 'source_hash' => $this->hashRow($row),
             ];
+
+            $protected = $this->project->management_mode === Project::MANAGEMENT_LARAVEL
+                && isset($this->laravelAkadBookingIds[$bookingId]);
+            if ($protected) {
+                $laravelRow = AkadRecord::query()
+                    ->where('booking_id', $bookingId)
+                    ->where('source_owner', AkadRecord::OWNER_LARAVEL)
+                    ->first();
+                $this->reportAkadConflict($laravelRow, $attributes, 'Akad', $rowNumber, $number);
+                $this->protectedAkadBookings[$bookingKey] = true;
+                $this->akadMap[$number] = $bookingKey;
+                continue;
+            }
+
             $this->upsert(AkadRecord::class, $attributes['source_key'], $attributes, 'akad_records');
             $this->akadMap[$number] = $bookingKey;
             $this->recordEvent($bookingKey, 'AKAD', $date, [
@@ -1353,7 +1398,10 @@ class ProjectImporter
                 'transfer_type' => $info['transfer_type'],
             ];
 
-            $bookingProtected = isset($this->protectedBookings[$key]) || isset($this->protectedBankBookings[$key]) || isset($this->protectedPpjbBookings[$key]);
+            $bookingProtected = isset($this->protectedBookings[$key])
+                || isset($this->protectedBankBookings[$key])
+                || isset($this->protectedPpjbBookings[$key])
+                || isset($this->protectedAkadBookings[$key]);
             $effectiveStatus = $bookingProtected
                 ? $info['booking']->status
                 : $status;
@@ -1751,6 +1799,37 @@ class ProjectImporter
 
         if ($differences !== []) {
             $this->issue('warning', 'import_conflict', 'Laravel-owned PPJB Developer differs from Sheets. Database values were preserved.', $tab, $row, $sourceKey, ['fields' => array_keys($differences), 'values' => $differences]);
+        }
+    }
+
+    private function reportAkadConflict(?AkadRecord $record, array $source, string $tab, int $row, string $sourceKey): void
+    {
+        if (! $record) {
+            return;
+        }
+
+        $fields = [
+            'booking_id', 'project_id', 'ppjb_id', 'akad_number', 'akad_date', 'quality',
+            'withdrawn_flag', 'cancelled_flag', 'moved_lot_flag', 'name_change_flag', 'notes',
+        ];
+        $differences = [];
+        foreach ($fields as $field) {
+            if (! array_key_exists($field, $source)) {
+                continue;
+            }
+            $current = $record->getAttribute($field);
+            $incoming = $source[$field];
+            if ($this->comparableConflictValue($current) === $this->comparableConflictValue($incoming)) {
+                continue;
+            }
+            $differences[$field] = [
+                'current' => $this->safeConflictValue($current),
+                'source' => $this->safeConflictValue($incoming),
+            ];
+        }
+
+        if ($differences !== []) {
+            $this->issue('warning', 'import_conflict', 'Laravel-owned Akad differs from Sheets. Database values were preserved.', $tab, $row, $sourceKey, ['fields' => array_keys($differences), 'values' => $differences]);
         }
     }
 

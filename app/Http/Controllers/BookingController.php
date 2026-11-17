@@ -118,6 +118,7 @@ class BookingController extends Controller
             ->when($booking->akad, fn ($c, $r) => $c->push($this->entry('Akad', $r->akad_date, [
                 'No. Akad' => $r->akad_number,
                 'Kualitas' => $r->quality,
+                'Sumber PPJB' => $r->ppjb_id ? 'PPJB #' . $r->ppjb_id : null,
                 'Catatan' => $r->notes,
             ])))
             ->when($booking->bast, fn ($c, $r) => $c->push($this->entry('BAST', $r->bast_date, [
