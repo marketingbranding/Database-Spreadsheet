@@ -25,6 +25,8 @@ class BookingAudit extends Model
 
     public const ACTION_AKAD_CREATED = 'akad_created';
 
+    public const ACTION_BAST_CREATED = 'bast_created';
+
     protected $fillable = [
         'project_id', 'booking_id', 'user_id', 'action', 'before', 'after', 'request_id',
     ];
@@ -73,7 +75,7 @@ class BookingAudit extends Model
 
     public static function snapshot(Booking $booking): array
     {
-        $booking->loadMissing(['psjb', 'pemberkasan', 'bankSubmissions.pemberkasan', 'ppjb', 'akad']);
+        $booking->loadMissing(['psjb', 'pemberkasan', 'bankSubmissions.pemberkasan', 'ppjb', 'akad', 'bast']);
 
         $snapshot = $booking->only([
             'project_id', 'lot_id', 'buyer_id', 'source_booking_key', 'psjb_number',
@@ -121,6 +123,11 @@ class BookingAudit extends Model
         $snapshot['akad'] = $booking->akad?->only([
             'id', 'booking_id', 'ppjb_id', 'akad_number', 'akad_date', 'quality',
             'withdrawn_flag', 'cancelled_flag', 'moved_lot_flag', 'name_change_flag',
+            'notes', 'source_owner',
+        ]);
+
+        $snapshot['bast'] = $booking->bast?->only([
+            'id', 'booking_id', 'akad_id', 'project_id', 'bast_number', 'bast_date',
             'notes', 'source_owner',
         ]);
 
