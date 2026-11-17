@@ -310,6 +310,28 @@ class ImportConflictWorkflowTest extends TestCase
         $this->assertNotNull($current->fresh()->ppjb);
     }
 
+    public function test_conflict_resolution_rejects_non_allowlisted_disposition_status(): void
+    {
+        [$project, , $lot, , $hq, , , $other] = $this->scenario();
+        $conflict = $this->allocationConflict($project, $lot, ImportConflict::CASE_COMPETING_CLAIMS, [$other->id]);
+
+        try {
+            app(PsjbWorkflow::class)->applyConflictClaimResolution($hq, $project, [
+                'conflict_id' => $conflict->id,
+                'current_booking_id' => $other->id,
+                'dispositions' => [$other->id => 'APPROVE'],
+                'reason' => 'Invalid',
+                'source_reference' => 'PSJB:2',
+            ]);
+            $this->fail('Expected invalid disposition status to be rejected.');
+        } catch (HttpException $exception) {
+            $this->assertSame(422, $exception->getStatusCode());
+        }
+
+        $this->assertSame(Booking::STATUS_ACTIVE, $other->fresh()->status);
+        $this->assertFalse($other->fresh()->is_current_holder);
+    }
+
     public function test_injected_failure_rolls_back_booking_audit_proposal_event_and_conflict(): void
     {
         [$project, , $lot, $admin, $hq, , $current, $other] = $this->scenario();

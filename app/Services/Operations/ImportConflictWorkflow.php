@@ -163,6 +163,7 @@ class ImportConflictWorkflow
                 ->lockForUpdate()
                 ->firstOrFail();
             $this->assertPending($lockedProposal);
+            $this->assertActionableConflict($conflict);
             $this->assertUnchangedFingerprint($lockedProposal, $conflict);
 
             $before = $this->conflictBefore($conflict);
@@ -234,6 +235,7 @@ class ImportConflictWorkflow
                 ->lockForUpdate()
                 ->firstOrFail();
             $this->assertPending($lockedProposal);
+            $this->assertActionableConflict($conflict);
 
             $before = ['status' => $conflict->status];
             $restoredStatus = $conflict->status === ImportConflict::STATUS_ESCALATED
@@ -418,6 +420,26 @@ class ImportConflictWorkflow
             ImportConflict::STATUS_ESCALATED,
         ], true)) {
             throw new HttpException(409, 'This conflict is no longer open for proposals.');
+        }
+    }
+
+    private function assertActionableConflict(ImportConflict $conflict): void
+    {
+        if (! in_array($conflict->status, [
+            ImportConflict::STATUS_OPEN,
+            ImportConflict::STATUS_PROPOSED,
+            ImportConflict::STATUS_ESCALATED,
+        ], true)) {
+            throw new HttpException(409, 'Konflik ini tidak lagi aktif untuk disetujui.');
+        }
+
+        $superseded = ImportConflict::query()
+            ->where('project_id', $conflict->project_id)
+            ->where('stable_source_identity', $conflict->stable_source_identity)
+            ->where('source_fingerprint', '!=', $conflict->source_fingerprint)
+            ->exists();
+        if ($superseded) {
+            throw new HttpException(409, 'Sumber konflik telah berubah; usulan ini perlu ditinjau ulang.');
         }
     }
 

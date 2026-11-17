@@ -19,6 +19,7 @@ use App\Services\Operations\ImportConflictWorkflow;
 use App\Services\Operations\PsjbWorkflow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 class ImportConflictStagingRehearsalTest extends TestCase
@@ -219,6 +220,12 @@ class ImportConflictStagingRehearsalTest extends TestCase
 
     private function assertMaterialSourceChangeOpensSuccessor(): void
     {
+        $staleProposal = $this->propose(
+            $this->materialTarget,
+            ImportConflictProposal::ACTION_CONFIRM_LARAVEL,
+            [],
+            'rehearsal-stale-approval'
+        );
         $changed = tempnam(sys_get_temp_dir(), 'conflict-fixture-').'.json';
         $payload = json_decode((string) file_get_contents($this->fixture), true, flags: JSON_THROW_ON_ERROR);
         $tabs = $payload['tabs'] ?? $payload;
@@ -242,6 +249,17 @@ class ImportConflictStagingRehearsalTest extends TestCase
             'supersedes_conflict_id' => $this->materialTarget->id,
             'status' => ImportConflict::STATUS_OPEN,
         ]);
+        $this->assertSame(ImportConflict::STATUS_SUPERSEDED, $this->materialTarget->fresh()->status);
+
+        try {
+            app(ImportConflictWorkflow::class)->approve($this->hq, $staleProposal, [
+                'approval_reason' => 'Should be blocked by supersession.',
+            ]);
+            $this->fail('Expected stale superseded proposal to be rejected.');
+        } catch (HttpException $exception) {
+            $this->assertSame(409, $exception->getStatusCode());
+        }
+        $this->assertSame(ImportConflictProposal::STATUS_PENDING, $staleProposal->fresh()->status);
         unlink($changed);
     }
 

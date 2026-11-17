@@ -1442,6 +1442,12 @@ class PsjbWorkflow
                 }
             }
 
+            foreach ($dispositions as $status) {
+                if (! in_array($status, [Booking::STATUS_MUNDUR, Booking::STATUS_BATAL], true)) {
+                    throw new HttpException(422, 'Disposisi konflik hanya boleh MUNDUR atau BATAL.');
+                }
+            }
+
             $before = $bookings->map(fn (Booking $booking) => BookingAudit::snapshot($booking))->all();
 
             foreach ($dispositions as $bookingId => $status) {
