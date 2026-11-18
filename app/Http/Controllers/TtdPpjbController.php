@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\BuildsStageHistory;
 use App\Http\Requests\StorePpjbRequest;
 use App\Models\Booking;
 use App\Models\Project;
@@ -13,6 +14,8 @@ use Illuminate\Http\Request;
 
 class TtdPpjbController extends Controller
 {
+    use BuildsStageHistory;
+
     private const PILOT_PROJECT_CODES = ['PRJ-JPR-KWS', 'PRJ-MGL-KLG'];
 
     public function __construct(private readonly PsjbWorkflow $workflow) {}
@@ -20,10 +23,13 @@ class TtdPpjbController extends Controller
     public function index(Request $request, Project $project): View
     {
         $this->authorizeProject($request, $project);
+        $tab = $request->query('tab') === 'riwayat' ? 'riwayat' : 'antrean';
 
         return view('ttd-ppjb.index', [
             'project' => $project,
-            'bookings' => $this->workflow->eligibleTtdPpjbBookings($project)->get(),
+            'tab' => $tab,
+            'bookings' => $tab === 'antrean' ? $this->workflow->eligibleTtdPpjbBookings($project)->get() : collect(),
+            'history' => $tab === 'riwayat' ? $this->stageHistory($project, 'ppjb') : null,
         ]);
     }
 

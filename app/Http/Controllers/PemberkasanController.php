@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\BuildsStageHistory;
 use App\Http\Requests\StorePemberkasanRequest;
 use App\Models\Booking;
 use App\Models\Project;
@@ -13,17 +14,27 @@ use Illuminate\Http\Request;
 
 class PemberkasanController extends Controller
 {
+    use BuildsStageHistory;
+
     public function __construct(private readonly PsjbWorkflow $workflow) {}
 
     public function index(Request $request, Project $project): View
     {
         $this->authorizeProject($request, $project);
-        return view('pemberkasan.index', ['project' => $project, 'bookings' => $this->workflow->eligiblePemberkasanBookings($project)->get()]);
+        $tab = $request->query('tab') === 'riwayat' ? 'riwayat' : 'antrean';
+
+        return view('pemberkasan.index', [
+            'project' => $project,
+            'tab' => $tab,
+            'bookings' => $tab === 'antrean' ? $this->workflow->eligiblePemberkasanBookings($project)->get() : collect(),
+            'history' => $tab === 'riwayat' ? $this->stageHistory($project, 'pemberkasan') : null,
+        ]);
     }
 
     public function edit(Request $request, Project $project, Booking $booking): View
     {
         $this->authorizeBooking($request, $project, $booking);
+
         return view('pemberkasan.edit', compact('project', 'booking'));
     }
 
@@ -31,6 +42,7 @@ class PemberkasanController extends Controller
     {
         $this->authorizeBooking($request, $project, $booking);
         $this->workflow->recordPemberkasan($request->user(), $booking, $request->validated());
+
         return redirect()->route('bookings.show', $booking)->with('status', 'Pemberkasan berhasil disimpan.');
     }
 

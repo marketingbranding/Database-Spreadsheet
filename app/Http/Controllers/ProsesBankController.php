@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\BuildsStageHistory;
 use App\Http\Requests\StoreBankResultRequest;
 use App\Http\Requests\StoreBankSubmissionRequest;
 use App\Models\BankSubmission;
@@ -16,6 +17,8 @@ use Illuminate\Http\Request;
 
 class ProsesBankController extends Controller
 {
+    use BuildsStageHistory;
+
     private const PILOT_PROJECT_CODES = ['PRJ-JPR-KWS', 'PRJ-MGL-KLG'];
 
     public function __construct(private readonly PsjbWorkflow $workflow) {}
@@ -23,12 +26,17 @@ class ProsesBankController extends Controller
     public function index(Request $request, Project $project): View
     {
         $this->authorizeProject($request, $project);
+        $tab = $request->query('tab') === 'riwayat' ? 'riwayat' : 'antrean';
 
         return view('proses-bank.index', [
             'project' => $project,
-            'bookings' => $this->workflow->eligibleBankBookings($project)
-                ->with('bankSubmissions.pemberkasan')
-                ->get(),
+            'tab' => $tab,
+            'bookings' => $tab === 'antrean'
+                ? $this->workflow->eligibleBankBookings($project)
+                    ->with('bankSubmissions.pemberkasan')
+                    ->get()
+                : collect(),
+            'history' => $tab === 'riwayat' ? $this->stageHistory($project, 'bank') : null,
         ]);
     }
 

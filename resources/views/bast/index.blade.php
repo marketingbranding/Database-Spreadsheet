@@ -4,6 +4,11 @@
 @section('subtitle', $project->name . ' · ' . $project->branch?->name)
 
 @section('content')
+@include('partials.stage-tabs', ['active' => $tab])
+
+@if ($tab === 'riwayat')
+    @include('partials.stage-history', ['history' => $history, 'stage' => 'bast'])
+@else
 <section class="card section" aria-labelledby="bast-heading">
     <div class="card-title">
         <h2 id="bast-heading">Antrean BAST</h2>
@@ -38,4 +43,5 @@
         </div>
     @endif
 </section>
+@endif
 @endsection

@@ -4,9 +4,14 @@
 @section('subtitle', $project->name . ' · ' . $project->branch?->name)
 
 @section('content')
+@include('partials.stage-tabs', ['active' => $tab])
+
+@if ($tab === 'riwayat')
+    @include('partials.stage-history', ['history' => $history, 'stage' => 'akad'])
+@else
 <section class="card section" aria-labelledby="akad-heading">
     <div class="card-title">
-        <h2 id="akad-heading">Antrian Akad</h2>
+        <h2 id="akad-heading">Antrean Akad</h2>
         <span class="hint">{{ $bookings->count() }} booking</span>
     </div>
     @if ($bookings->isEmpty())
@@ -32,4 +37,5 @@
         </div>
     @endif
 </section>
+@endif
 @endsection

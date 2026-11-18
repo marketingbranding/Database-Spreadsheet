@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\BuildsStageHistory;
 use App\Http\Requests\StoreBiCheckRequest;
 use App\Models\Booking;
 use App\Models\Project;
@@ -13,15 +14,20 @@ use Illuminate\Http\Request;
 
 class BiCheckController extends Controller
 {
+    use BuildsStageHistory;
+
     public function __construct(private readonly PsjbWorkflow $workflow) {}
 
     public function index(Request $request, Project $project): View
     {
         $this->authorizeProject($request, $project);
+        $tab = $request->query('tab') === 'riwayat' ? 'riwayat' : 'antrean';
 
         return view('bi.index', [
             'project' => $project,
-            'bookings' => $this->workflow->eligibleBiBookings($project)->get(),
+            'tab' => $tab,
+            'bookings' => $tab === 'antrean' ? $this->workflow->eligibleBiBookings($project)->get() : collect(),
+            'history' => $tab === 'riwayat' ? $this->stageHistory($project, 'bi') : null,
         ]);
     }
 
