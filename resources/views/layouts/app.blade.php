@@ -11,6 +11,7 @@
     <a class="skip-link" href="#main">Ke konten utama</a>
 
     <div class="shell">
+        <button type="button" class="sidebar-backdrop" aria-label="Tutup menu navigasi" tabindex="-1"></button>
         <aside class="sidebar">
             <div class="sidebar-brand">
                 Marison Database
@@ -60,6 +61,7 @@
         <div class="content">
             <header class="topbar">
                 <div>
+                    <button type="button" class="menu-toggle" aria-expanded="false" aria-controls="sidebar-nav">Buka menu navigasi</button>
                     <h1>@yield('title')</h1>
                     <div class="subtitle">@yield('subtitle')</div>
                 </div>
@@ -75,5 +77,31 @@
             </main>
         </div>
     </div>
+
+    <script>
+        (function () {
+            var body = document.body;
+            var toggle = document.querySelector('.menu-toggle');
+            var backdrop = document.querySelector('.sidebar-backdrop');
+            if (!toggle || !backdrop) return;
+
+            function setOpen(open) {
+                body.setAttribute('data-nav-open', open ? 'true' : 'false');
+                toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+            }
+
+            setOpen(false);
+            toggle.addEventListener('click', function () {
+                setOpen(body.getAttribute('data-nav-open') !== 'true');
+            });
+            backdrop.addEventListener('click', function () { setOpen(false); });
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') setOpen(false);
+            });
+            document.querySelectorAll('.sidebar nav a').forEach(function (link) {
+                link.addEventListener('click', function () { setOpen(false); });
+            });
+        })();
+    </script>
 </body>
 </html>

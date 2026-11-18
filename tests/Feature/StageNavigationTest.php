@@ -145,6 +145,21 @@ class StageNavigationTest extends TestCase
         );
     }
 
+    public function test_mobile_sidebar_toggle_is_accessible_and_closes_on_selection(): void
+    {
+        $response = $this->actingAs($this->admin)->get(route('bi.index', $this->jpr));
+
+        $response->assertOk();
+        $content = (string) $response->getContent();
+        $this->assertStringContainsString('class="menu-toggle"', $content);
+        $this->assertStringContainsString('aria-expanded="false"', $content);
+        $this->assertStringContainsString('aria-controls="sidebar-nav"', $content);
+        $this->assertStringContainsString('id="sidebar-nav"', $content);
+        $this->assertStringContainsString('data-nav-open', $content);
+        $this->assertStringContainsString('Escape', $content);
+        $this->assertStringContainsString('sidebar-backdrop', $content);
+    }
+
     private function seedQueueBookings(Project $project, int $count): void
     {
         foreach (range(1, $count) as $i) {
