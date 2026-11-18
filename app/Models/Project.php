@@ -84,4 +84,15 @@ class Project extends Model
 
         return $query->whereIn('id', $user->projects()->select('projects.id'));
     }
+
+    public static function stagingPilotCodes(): array
+    {
+        return ['PRJ-JPR-KWS', 'PRJ-MGL-KLG'];
+    }
+
+    public function isOperationalStaging(): bool
+    {
+        return $this->management_mode === self::MANAGEMENT_LARAVEL
+            && in_array($this->code, self::stagingPilotCodes(), true);
+    }
 }
