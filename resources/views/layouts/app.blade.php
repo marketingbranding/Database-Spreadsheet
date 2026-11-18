@@ -17,26 +17,30 @@
                 <span>Multi-Branch</span>
             </div>
 
-            <nav aria-label="Navigasi utama">
+            <nav id="sidebar-nav" aria-label="Navigasi utama">
+                <div class="nav-group-label">Umum</div>
                 <a href="{{ route('dashboard') }}" @class(['active' => request()->routeIs('dashboard')])>Dashboard</a>
                 <a href="{{ route('projects.index') }}" @class(['active' => request()->routeIs('projects.*')])>Proyek</a>
                 <a href="{{ route('inventory.index') }}" @class(['active' => request()->routeIs('inventory.*')])>Stok Kavling</a>
-                <a href="{{ route('bookings.index') }}" @class(['active' => request()->routeIs('bookings.*')])>Booking</a>
-                @if (request()->route('project'))
-                    <a href="{{ route('bi.index', request()->route('project')) }}" @class(['active' => request()->routeIs('bi.*')])>BI Checking</a>
-                    <a href="{{ route('pemberkasan.index', request()->route('project')) }}" @class(['active' => request()->routeIs('pemberkasan.*')])>Pemberkasan</a>
-                    @if (request()->route('project') instanceof \App\Models\Project && request()->route('project')->management_mode === \App\Models\Project::MANAGEMENT_LARAVEL && in_array(request()->route('project')->code, ['PRJ-JPR-KWS', 'PRJ-MGL-KLG'], true))
-                        <a href="{{ route('bank.index', request()->route('project')) }}" @class(['active' => request()->routeIs('bank.*')])>Proses Bank</a>
-                        <a href="{{ route('ppjb.index', request()->route('project')) }}" @class(['active' => request()->routeIs('ppjb.*')])>TTD PPJB</a>
-                        <a href="{{ route('akad.index', request()->route('project')) }}" @class(['active' => request()->routeIs('akad.*')])>Akad</a>
-                        <a href="{{ route('bast.index', request()->route('project')) }}" @class(['active' => request()->routeIs('bast.*')])>BAST</a>
-                        @if (config('marison.import_conflicts_enabled'))
-                            <a href="{{ route('import-conflicts.index', request()->route('project')) }}" @class(['active' => request()->routeIs('import-conflicts.*')])>Konflik Impor</a>
-                        @endif
+
+                <div class="nav-group-label">Tahapan Operasional</div>
+                @php($stageRoutes = ['psjb' => 'psjb.index', 'bi' => 'bi.index', 'pemberkasan' => 'pemberkasan.index', 'bank' => 'bank.index', 'ppjb' => 'ppjb.index', 'akad' => 'akad.index', 'bast' => 'bast.index'])
+                @php($stageLabels = ['psjb' => 'PSJB / UTJ', 'bi' => 'BI Checking', 'pemberkasan' => 'Pemberkasan', 'bank' => 'Proses Bank', 'ppjb' => 'TTD PPJB', 'akad' => 'Akad', 'bast' => 'BAST'])
+                @foreach ($stageRoutes as $stageKey => $stageRoute)
+                    @if ($stageProject)
+                        <a href="{{ route($stageRoute, $stageProject) }}" @class(['active' => request()->routeIs(str_replace('.index', '.*', $stageRoute))])>{{ $stageLabels[$stageKey] }}@if (($stageCounts[$stageKey] ?? 0) > 0)<span class="nav-badge">{{ $stageCounts[$stageKey] }}</span>@endif</a>
+                    @else
+                        <a href="{{ route('stages.select', ['stage' => $stageKey]) }}">{{ $stageLabels[$stageKey] }}</a>
                     @endif
+                @endforeach
+
+                <div class="nav-group-label">Data</div>
+                <a href="{{ route('bookings.index') }}" @class(['active' => request()->routeIs('bookings.*')])>Semua Booking</a>
+                @if ($stageProject && config('marison.import_conflicts_enabled'))
+                    <a href="{{ route('import-conflicts.index', $stageProject) }}" @class(['active' => request()->routeIs('import-conflicts.*')])>Konflik Data</a>
                 @endif
                 <a href="{{ route('reconciliation.index') }}" @class(['active' => request()->routeIs('reconciliation.*')])>Rekonsiliasi</a>
-                <a href="{{ route('imports.index') }}" @class(['active' => request()->routeIs('imports.*')])>Impor</a>
+                <a href="{{ route('imports.index') }}" @class(['active' => request()->routeIs('imports.*')])>Riwayat Impor</a>
             </nav>
 
             <div class="sidebar-user">

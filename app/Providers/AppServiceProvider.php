@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\View\Composers\StageBadgeComposer;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -22,5 +24,6 @@ class AppServiceProvider extends ServiceProvider
     {
         Paginator::defaultView('partials.pagination');
         Paginator::defaultSimpleView('partials.pagination');
+        View::composer('layouts.app', StageBadgeComposer::class);
     }
 }

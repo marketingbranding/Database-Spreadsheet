@@ -15,6 +15,7 @@ use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProsesBankController;
 use App\Http\Controllers\PsjbController;
 use App\Http\Controllers\ReconciliationController;
+use App\Http\Controllers\StageSelectController;
 use App\Http\Controllers\TtdPpjbController;
 use Illuminate\Support\Facades\Route;
 
@@ -31,6 +32,7 @@ Route::post('/logout', [LoginController::class, 'destroy'])
 
 Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+    Route::get('/stages/select', [StageSelectController::class, 'index'])->name('stages.select');
 
     Route::get('/projects', [ProjectController::class, 'index'])->name('projects.index');
     Route::get('/projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
