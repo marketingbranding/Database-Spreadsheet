@@ -12,6 +12,30 @@ Production Sheets stay read-only. Do not enable operational writes or switch
 production project mode. Mode command accepts only pilot codes `PRJ-MGL-KLG`
 and `PRJ-JPR-KWS`.
 
+## Stage navigation (pilot UI)
+
+The sidebar groups navigation in three sections: Umum (Dashboard, Proyek,
+Stok Kavling), Tahapan Operasional (PSJB / UTJ, BI Checking, Pemberkasan,
+Proses Bank, TTD PPJB, Akad, BAST), and Data (Semua Booking, Konflik Data,
+Rekonsiliasi, Riwayat Impor). All seven stage links are always visible; with
+no project context a stage link opens the authorized project selector
+(`/stages/select?stage=<key>`), which lists only projects the user can access
+and explains why a project's stages are unavailable (Sheets-managed or
+non-pilot).
+
+Stage badges are request-time counts of the exact queue each stage's Antrean
+tab renders, scoped to the selected project (PSJB counts ACTIVE bookings at
+stage PSJB; downstream stages count their existing eligibility queries).
+`?tab=antrean|riwayat` switches each stage page between the eligible queue
+and the recorded stage history, paginated 20 bookings per page with cycle
+links; every history row links to the full booking timeline. PSJB / UTJ
+routes KPR rows to BI Checking and CASH rows to Pemberkasan using the
+existing eligibility rules; rows on lots with unresolved allocation
+conflicts show the block reason and a Konflik Data link only when the
+conflict gate is enabled and the user can access the module. On mobile
+(≤ 900 px) the sidebar becomes a hamburger drawer that closes on Escape and
+on menu selection.
+
 ## Ganti Nama and Pindah Kavling
 
 These actions are limited to active bookings before a PPJB, Akad, or BAST record
