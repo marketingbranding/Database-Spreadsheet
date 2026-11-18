@@ -2,6 +2,7 @@
 
 namespace App\View\Composers;
 
+use App\Models\ImportConflict;
 use App\Models\Project;
 use App\Services\Operations\PsjbWorkflow;
 use App\Services\Operations\StageQueue;
@@ -18,19 +19,24 @@ class StageBadgeComposer
     {
         $stageProject = $this->resolveStageProject();
 
+        $user = auth()->user();
+
         $view->with('stageProject', $stageProject);
         $view->with('stageCounts', $stageProject ? $this->stageQueue->queueCounts($stageProject, $this->workflow) : null);
+        $view->with('canViewConflicts', $stageProject && $user ? ImportConflict::canView($user, $stageProject) : false);
     }
 
     private function resolveStageProject(): ?Project
     {
+        $user = auth()->user();
         $routeProject = request()->route('project');
-        if ($routeProject instanceof Project && $routeProject->isOperationalStaging()) {
+        if ($routeProject instanceof Project
+            && $routeProject->isOperationalStaging()
+            && $user?->canAccessProject($routeProject)) {
             return $routeProject;
         }
 
         $code = request()->query('project');
-        $user = auth()->user();
         if (is_string($code) && $code !== '' && $user) {
             $candidate = Project::query()->where('code', $code)->first();
             if ($candidate && $candidate->isOperationalStaging() && $user->canAccessProject($candidate)) {

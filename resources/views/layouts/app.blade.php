@@ -37,7 +37,7 @@
 
                 <div class="nav-group-label">Data</div>
                 <a href="{{ route('bookings.index') }}" @class(['active' => request()->routeIs('bookings.*')])>Semua Booking</a>
-                @if ($stageProject && config('marison.import_conflicts_enabled'))
+                @if ($canViewConflicts)
                     <a href="{{ route('import-conflicts.index', $stageProject) }}" @class(['active' => request()->routeIs('import-conflicts.*')])>Konflik Data</a>
                 @endif
                 <a href="{{ route('reconciliation.index') }}" @class(['active' => request()->routeIs('reconciliation.*')])>Rekonsiliasi</a>
@@ -83,20 +83,39 @@
             var body = document.body;
             var toggle = document.querySelector('.menu-toggle');
             var backdrop = document.querySelector('.sidebar-backdrop');
-            if (!toggle || !backdrop) return;
+            var sidebar = document.querySelector('.sidebar');
+            var nav = document.getElementById('sidebar-nav');
+            var returnFocus = toggle;
+            if (!toggle || !backdrop || !sidebar || !nav) return;
 
             function setOpen(open) {
                 body.setAttribute('data-nav-open', open ? 'true' : 'false');
                 toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
             }
 
+            function close(restoreFocus) {
+                setOpen(false);
+                if (restoreFocus && sidebar.contains(document.activeElement)) {
+                    // Restore focus to the toggle so keyboard users stay oriented.
+                    returnFocus.focus();
+                }
+            }
+
             setOpen(false);
             toggle.addEventListener('click', function () {
-                setOpen(body.getAttribute('data-nav-open') !== 'true');
+                if (body.getAttribute('data-nav-open') === 'true') {
+                    close(false);
+                    return;
+                }
+                returnFocus = document.activeElement || toggle;
+                setOpen(true);
+                // Focus first nav link so Tab continues inside the drawer.
+                var first = nav.querySelector('a');
+                if (first) first.focus();
             });
-            backdrop.addEventListener('click', function () { setOpen(false); });
+            backdrop.addEventListener('click', function () { close(true); });
             document.addEventListener('keydown', function (event) {
-                if (event.key === 'Escape') setOpen(false);
+                if (event.key === 'Escape') close(true);
             });
             document.querySelectorAll('.sidebar nav a').forEach(function (link) {
                 link.addEventListener('click', function () { setOpen(false); });

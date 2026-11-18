@@ -115,6 +115,23 @@ class StageHistoryTest extends TestCase
         $this->assertContains('Ganti nama', collect($successorRow['events'])->pluck('label')->all());
     }
 
+    public function test_history_loads_only_relations_the_requested_stage_needs(): void
+    {
+        $booking = $this->booking('banked');
+        BankSubmission::query()->create($this->bankAttributes($booking, 1, ['result' => 'APPROVE']));
+
+        $row = $this->builder->stageHistory($this->project, 'bank')->items()[0];
+        $loaded = $row['booking']->getRelations();
+
+        $this->assertArrayHasKey('bankSubmissions', $loaded);
+        $this->assertArrayHasKey('lot', $loaded);
+        $this->assertArrayHasKey('buyer', $loaded);
+        $this->assertArrayNotHasKey('psjb', $loaded);
+        $this->assertArrayNotHasKey('ppjb', $loaded);
+        $this->assertArrayNotHasKey('successors', $loaded);
+        $this->assertNull($row['cycle']);
+    }
+
     public function test_history_paginates_by_booking(): void
     {
         foreach (range(1, 21) as $i) {

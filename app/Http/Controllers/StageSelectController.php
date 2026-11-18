@@ -24,8 +24,8 @@ class StageSelectController extends Controller
 
     public function index(Request $request): View
     {
-        $stage = $request->string('stage')->toString();
-        abort_unless(isset(self::STAGES[$stage]), 404, 'Tahapan tidak dikenal.');
+        $stage = $request->query('stage');
+        abort_unless(is_string($stage) && isset(self::STAGES[$stage]), 404, 'Tahapan tidak dikenal.');
 
         $tab = $request->query('tab') === 'riwayat' ? 'riwayat' : 'antrean';
         $user = $request->user();

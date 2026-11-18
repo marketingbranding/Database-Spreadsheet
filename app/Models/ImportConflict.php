@@ -98,6 +98,20 @@ class ImportConflict extends Model
         return $this->belongsTo(User::class, 'resolved_by');
     }
 
+    /**
+     * Read-side mirror of ImportConflictController::authorize(). Used wherever
+     * the UI links to the conflict module so no dead link is rendered.
+     */
+    public static function canView(User $user, Project $project): bool
+    {
+        return $user->is_active === true
+            && config('app.env') === 'staging'
+            && filter_var(env('MARISON_OPERATIONAL_WRITES', false), FILTER_VALIDATE_BOOL)
+            && (bool) config('marison.import_conflicts_enabled', false)
+            && in_array($project->code, Project::stagingPilotCodes(), true)
+            && ($user->isHq() || $user->canAccessProject($project));
+    }
+
     public function blocksAllocation(): bool
     {
         return in_array($this->case_type, [
@@ -112,6 +126,21 @@ class ImportConflict extends Model
 
     public static function openAllocationDisputesForLot(int $projectId, int $lotId): Builder
     {
+        return self::allocationDisputes($projectId)
+            ->whereHas('lots', fn (Builder $query) => $query->whereKey($lotId));
+    }
+
+    /**
+     * @param  array<int, int>  $lotIds
+     */
+    public static function openAllocationDisputesForLots(int $projectId, array $lotIds): Builder
+    {
+        return self::allocationDisputes($projectId)
+            ->whereHas('lots', fn (Builder $query) => $query->whereIn('id', $lotIds));
+    }
+
+    private static function allocationDisputes(int $projectId): Builder
+    {
         return self::query()
             ->where('project_id', $projectId)
             ->whereIn('case_type', [
@@ -122,7 +151,6 @@ class ImportConflict extends Model
                 self::STATUS_OPEN,
                 self::STATUS_PROPOSED,
                 self::STATUS_ESCALATED,
-            ])
-            ->whereHas('lots', fn (Builder $query) => $query->whereKey($lotId));
+            ]);
     }
 }

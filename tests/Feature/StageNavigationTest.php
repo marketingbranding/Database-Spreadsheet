@@ -127,22 +127,33 @@ class StageNavigationTest extends TestCase
     public function test_unknown_stage_key_returns_404(): void
     {
         $this->actingAs($this->admin)->get(route('stages.select', ['stage' => 'import-conflicts']))->assertNotFound();
+        $this->actingAs($this->admin)->get('/stages/select?stage[]=bi')->assertNotFound();
     }
 
-    public function test_konflik_data_visibility_follows_the_gate(): void
+    public function test_konflik_data_visibility_follows_the_conflict_module_access_rules(): void
     {
-        config(['marison.import_conflicts_enabled' => true]);
+        config(['app.env' => 'staging', 'marison.import_conflicts_enabled' => true]);
+        putenv('MARISON_OPERATIONAL_WRITES=true');
         $shown = $this->actingAs($this->admin)->get(route('bi.index', $this->jpr));
         $shown->assertOk();
         $shown->assertSee(route('import-conflicts.index', $this->jpr), false);
 
-        config(['marison.import_conflicts_enabled' => false]);
+        config(['app.env' => 'local']);
+        $outsideStaging = $this->actingAs($this->admin)->get(route('bi.index', $this->jpr));
+        $outsideStaging->assertOk();
+        $this->assertStringNotContainsString(
+            route('import-conflicts.index', $this->jpr),
+            (string) $outsideStaging->getContent(),
+        );
+
+        config(['app.env' => 'staging', 'marison.import_conflicts_enabled' => false]);
         $hidden = $this->actingAs($this->admin)->get(route('bi.index', $this->jpr));
         $hidden->assertOk();
         $this->assertStringNotContainsString(
             route('import-conflicts.index', $this->jpr),
             (string) $hidden->getContent(),
         );
+        putenv('MARISON_OPERATIONAL_WRITES');
     }
 
     public function test_mobile_sidebar_toggle_is_accessible_and_closes_on_selection(): void
@@ -158,6 +169,9 @@ class StageNavigationTest extends TestCase
         $this->assertStringContainsString('data-nav-open', $content);
         $this->assertStringContainsString('Escape', $content);
         $this->assertStringContainsString('sidebar-backdrop', $content);
+        $this->assertStringContainsString('Focus first nav link', $content);
+        $this->assertStringContainsString('Restore focus to the toggle', $content);
+        $this->assertStringContainsString('visibility: hidden', (string) file_get_contents(public_path('css/app.css')));
     }
 
     private function seedQueueBookings(Project $project, int $count): void

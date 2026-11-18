@@ -83,6 +83,20 @@ class PsjbStageTest extends TestCase
         );
     }
 
+    public function test_conflict_link_hidden_when_conflict_module_is_not_available(): void
+    {
+        config(['marison.import_conflicts_enabled' => true, 'app.env' => 'local']);
+        $booking = $this->booking('blocked', 'KPR');
+        $conflict = $this->conflict($booking->lot, 'STOCK_DISAGREEMENT', 'blocked');
+        $link = route('import-conflicts.show', [$this->project, $conflict]);
+
+        $response = $this->actingAs($this->admin)->get(route('psjb.index', $this->project));
+
+        $response->assertOk();
+        $response->assertSee('Kavling memiliki konflik alokasi yang belum selesai.');
+        $this->assertStringNotContainsString($link, (string) $response->getContent());
+    }
+
     public function test_hq_sees_queue_without_create_button(): void
     {
         $hq = User::query()->create([

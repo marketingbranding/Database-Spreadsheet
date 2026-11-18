@@ -80,6 +80,22 @@ class StageTabsTest extends TestCase
         $fallback->assertSee($antreanAction);
     }
 
+    public function test_empty_riwayat_shows_an_empty_state(): void
+    {
+        $response = $this->actingAs($this->admin)->get(route('bi.index', ['project' => $this->project, 'tab' => 'riwayat']));
+
+        $response->assertOk();
+        $response->assertSee('Belum ada riwayat untuk tahap ini.');
+    }
+
+    public function test_tab_links_preserve_search_and_filter_context(): void
+    {
+        $response = $this->actingAs($this->admin)->get(route('bi.index', ['project' => $this->project, 'q' => 'abc', 'branch' => 'JPR']));
+
+        $response->assertOk();
+        $response->assertSee(e(route('bi.index', ['project' => $this->project, 'q' => 'abc', 'branch' => 'JPR', 'tab' => 'riwayat'])), false);
+    }
+
     public function test_stage_authorization_rejects_other_branch_admin(): void
     {
         $otherBranch = Branch::query()->create(['code' => 'MGL', 'name' => 'Magelang']);

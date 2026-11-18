@@ -7,6 +7,7 @@ use App\Http\Controllers\Concerns\BuildsStageHistory;
 use App\Http\Requests\BookingDecisionRequest;
 use App\Http\Requests\StorePsjbRequest;
 use App\Models\Booking;
+use App\Models\ImportConflict;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\Operations\PsjbWorkflow;
@@ -27,7 +28,7 @@ class PsjbController extends Controller
         $this->authorizeStage($request, $project);
 
         $tab = $request->query('tab') === 'riwayat' ? 'riwayat' : 'antrean';
-        $canViewConflicts = (bool) config('marison.import_conflicts_enabled') && $project->isOperationalStaging();
+        $canViewConflicts = ImportConflict::canView($request->user(), $project);
         $queue = $tab === 'antrean' ? $this->stageQueue->psjbQueue($project)->get() : collect();
 
         return view('psjb.index', [
@@ -37,9 +38,7 @@ class PsjbController extends Controller
             'history' => $tab === 'riwayat' ? $this->stageHistory($project, 'psjb') : null,
             'canCreatePsjb' => $this->canCreatePsjb($request),
             'canViewConflicts' => $canViewConflicts,
-            'blocked' => $queue->mapWithKeys(fn ($booking) => [
-                $booking->id => $this->stageQueue->blockReason($request->user(), $booking, $canViewConflicts, $this->workflow),
-            ]),
+            'blocked' => $this->stageQueue->blockReasons($project, $request->user(), $queue, $canViewConflicts, $this->workflow),
         ]);
     }
 

@@ -18,12 +18,12 @@ trait BuildsStageHistory
      * Recorded stage events for one stage, paginated by booking so a single
      * booking's events stay together on one page.
      *
-     * @return LengthAwarePaginator<array{booking: Booking, events: Collection, cycle: array}>
+     * @return LengthAwarePaginator<array{booking: Booking, events: Collection, cycle: ?array}>
      */
     public function stageHistory(Project $project, string $stage): LengthAwarePaginator
     {
         $bookings = $this->historyQuery($project, $stage)
-            ->with($this->historyRelations())
+            ->with($this->historyRelations($stage))
             ->orderBy('booking_date')
             ->orderBy('id')
             ->paginate(20);
@@ -36,7 +36,7 @@ trait BuildsStageHistory
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array{booking: Booking, events: Collection, cycle: ?array}
      */
     private function historyRow(string $stage, Booking $booking): array
     {
@@ -54,10 +54,10 @@ trait BuildsStageHistory
         return [
             'booking' => $booking,
             'events' => $events,
-            'cycle' => [
+            'cycle' => $stage === 'psjb' ? [
                 'predecessor_id' => $booking->predecessor_booking_id,
                 'successor_ids' => $booking->successors->pluck('id')->values()->all(),
-            ],
+            ] : null,
         ];
     }
 
@@ -79,9 +79,20 @@ trait BuildsStageHistory
     /**
      * @return array<int, string>
      */
-    private function historyRelations(): array
+    private function historyRelations(string $stage): array
     {
-        return ['lot', 'buyer', 'psjb', 'biCheck', 'pemberkasan', 'bankSubmissions', 'ppjb', 'akad', 'bast', 'predecessor', 'successors', 'outgoingTransitions', 'transition'];
+        $base = ['lot', 'buyer'];
+
+        return match ($stage) {
+            'psjb' => [...$base, 'psjb', 'predecessor', 'successors', 'outgoingTransitions', 'transition'],
+            'bi' => [...$base, 'biCheck'],
+            'pemberkasan' => [...$base, 'pemberkasan'],
+            'bank' => [...$base, 'bankSubmissions'],
+            'ppjb' => [...$base, 'ppjb'],
+            'akad' => [...$base, 'akad'],
+            'bast' => [...$base, 'bast'],
+            default => $base,
+        };
     }
 
     /**

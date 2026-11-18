@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Operations\PsjbWorkflow;
 use App\Services\Operations\StageQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class StageQueueTest extends TestCase
@@ -99,6 +100,26 @@ class StageQueueTest extends TestCase
         $this->assertNotNull($blocked);
         $this->assertSame('Kavling memiliki konflik alokasi yang belum selesai.', $blocked['reason']);
         $this->assertInstanceOf(ImportConflict::class, $blocked['conflict']);
+    }
+
+    public function test_block_reasons_prefetch_disputes_and_eligibility_for_the_whole_queue(): void
+    {
+        $disputedLot = Lot::query()->create(['project_id' => $this->project->id, 'code' => 'L10', 'source_key' => 'LOT:L10']);
+        $cleanLot = Lot::query()->create(['project_id' => $this->project->id, 'code' => 'L11', 'source_key' => 'LOT:L11']);
+        $disputed = $this->booking('disputed', Booking::STATUS_ACTIVE, Booking::STAGE_PSJB, $disputedLot->id);
+        $clean = $this->booking('cash', Booking::STATUS_ACTIVE, Booking::STAGE_PSJB, $cleanLot->id);
+        $this->conflict($disputedLot, 'STOCK_DISAGREEMENT', 'prefetch');
+        $bookings = collect([$disputed, $clean]);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $reasons = app(StageQueue::class)->blockReasons($this->project, $this->admin, $bookings, true, app(PsjbWorkflow::class));
+        $queries = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        $this->assertSame(3, $queries, collect(DB::getQueryLog())->pluck('query')->implode("\n"));
+        $this->assertSame('Kavling memiliki konflik alokasi yang belum selesai.', $reasons->get($disputed->id)['reason']);
+        $this->assertNull($reasons->get($clean->id));
     }
 
     public function test_block_reason_is_null_for_a_clean_cash_booking(): void

@@ -1,4 +1,7 @@
 @php($psjbStage = $stage === 'psjb')
+@if ($history->isEmpty())
+    <p class="empty-state">Belum ada riwayat untuk tahap ini.</p>
+@else
 <div class="table-wrap">
     <table class="stage-history">
         <thead>
@@ -61,3 +64,4 @@
     </table>
 </div>
 {{ $history->withQueryString()->links() }}
+@endif
