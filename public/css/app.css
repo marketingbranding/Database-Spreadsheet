@@ -265,6 +265,54 @@ a:hover { text-decoration: underline; }
 
 .filter-actions { display: flex; gap: 0.5rem; margin-left: auto; }
 
+.period-filter { position: relative; min-width: 180px; }
+.period-filter__trigger { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; width: 100%; min-height: 34px; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: #fff; color: var(--text); font: inherit; font-size: 0.9rem; cursor: pointer; text-align: left; }
+.period-filter__trigger:focus-visible,
+.period-filter__popover button:focus-visible,
+.period-filter__popover select:focus-visible,
+.period-filter__popover input:focus-visible { outline: 3px solid rgba(59, 130, 246, 0.35); outline-offset: 2px; }
+.period-filter__popover { position: absolute; z-index: 20; top: calc(100% + 0.6rem); right: 0; width: min(580px, calc(100vw - 2rem)); background: #fff; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18); overflow: hidden; }
+.period-filter__tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); padding: 0 1rem; }
+.period-filter__tabs button { position: relative; border: 0; background: transparent; color: var(--muted); padding: 0.85rem 1rem; font: inherit; font-size: 0.86rem; font-weight: 600; cursor: pointer; }
+.period-filter__tabs button[aria-selected="true"] { color: var(--accent-strong); }
+.period-filter__tabs button[aria-selected="true"]::after { content: ""; position: absolute; left: 0.75rem; right: 0.75rem; bottom: -1px; height: 2px; background: var(--accent); }
+.period-filter__panel { padding: 1rem; }
+.period-filter__year { display: flex; align-items: center; gap: 0.5rem; justify-content: flex-end; margin-bottom: 0.85rem; color: var(--muted); font-size: 0.8rem; }
+.period-filter__year select { min-width: 110px; }
+.period-filter__month-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.55rem; }
+.period-filter__month-grid button,
+.period-filter__quarter-grid button { min-height: 46px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: #fff; color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+.period-filter__month-grid button:hover,
+.period-filter__quarter-grid button:hover,
+.period-filter__month-grid button.is-selected,
+.period-filter__quarter-grid button.is-selected { border-color: #3b82f6; background: #e8f0ff; color: #174ea6; }
+.period-filter__quarter-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.7rem; }
+.period-filter__quarter-grid button { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0.35rem; padding: 0.8rem 1rem; text-align: left; }
+.period-filter__quarter-grid span { font-size: 0.78rem; font-weight: 400; }
+.period-filter__custom { padding: 0.9rem 1rem 1rem; }
+.period-filter__range-fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.6rem; margin-bottom: 0.9rem; }
+.period-filter__range-field { display: flex; flex-direction: column; gap: 0.25rem; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.55rem 0.7rem; }
+.period-filter__range-field span { color: var(--muted); font-size: 0.72rem; }
+.period-filter__range-field strong { font-size: 0.86rem; }
+.period-filter__calendar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.8rem; color: var(--text); font-size: 0.82rem; font-weight: 700; }
+.period-filter__calendar-nav { width: 2rem; height: 2rem; border: 1px solid var(--border); border-radius: 50%; background: #fff; color: var(--text); font-size: 1.25rem; line-height: 1; cursor: pointer; }
+.period-filter__calendars { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.period-filter__calendar-title { display: block; margin-bottom: 0.55rem; text-align: center; font-size: 0.82rem; }
+.period-filter__weekdays, .period-filter__days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.2rem; }
+.period-filter__weekdays { margin-bottom: 0.25rem; color: var(--muted); font-size: 0.65rem; text-align: center; }
+.period-filter__day { display: grid; place-items: center; min-height: 2rem; border: 0; border-radius: 0.35rem; background: transparent; color: var(--text); font: inherit; font-size: 0.78rem; cursor: pointer; }
+button.period-filter__day:hover, button.period-filter__day:focus-visible { background: #e8f0ff; color: #174ea6; }
+.period-filter__day--empty { pointer-events: none; }
+.period-filter__day.is-in-range { border-radius: 0; background: #e8f0ff; color: #174ea6; }
+.period-filter__day.is-selected { border-radius: 50%; background: #2563eb; color: #fff; font-weight: 700; }
+.period-filter__range-error { margin: 0.75rem 0 0; color: #b91c1c; font-size: 0.78rem; }
+.period-filter__summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-top: 1px solid var(--border); padding: 0.9rem 1rem 1rem; }
+.period-filter__summary > div:first-child { display: flex; flex-direction: column; gap: 0.15rem; }
+.period-filter__summary small { color: var(--muted); font-size: 0.72rem; }
+.period-filter__summary strong { font-size: 0.88rem; }
+.period-filter__summary span { color: var(--muted); font-size: 0.75rem; }
+.period-filter__actions { display: flex; gap: 0.5rem; }
+
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem 1rem; }
 .form-grid__wide { grid-column: 1 / -1; }
 .auth-field > span { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 0.3rem; }
@@ -571,6 +619,11 @@ td .small, .small { font-size: 0.8rem; }
   .sidebar-user button { width: auto; padding: 0.35rem 0.8rem; }
   .topbar, .page, .flash { padding-left: 1rem; padding-right: 1rem; }
   .filter-actions { margin-left: 0; width: 100%; }
+  .period-filter { width: 100%; }
+  .period-filter__popover { position: fixed; top: 5rem; left: 1rem; right: 1rem; width: auto; max-height: calc(100vh - 6rem); overflow-y: auto; }
+  .period-filter__summary { align-items: stretch; flex-direction: column; }
+  .period-filter__calendars { grid-template-columns: 1fr; gap: 1rem; }
+  .period-filter__actions { justify-content: flex-end; }
   .filterbar input[type="search"] { min-width: 0; flex: 1; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid__wide { grid-column: auto; }

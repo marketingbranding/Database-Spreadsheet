@@ -51,6 +51,7 @@ php artisan key:generate
 php artisan migrate --seed
 php artisan test
 php artisan marison:import --project=PRJ-JPR-KWS --dry-run
+php artisan queue:work
 php artisan serve
 ```
 

@@ -115,7 +115,7 @@ class ProjectImporter
     /**
      * @param  array<string, array<int, array<int, mixed>>>|null  $rawTabs  optional pre-read data
      */
-    public function run(Project $project, bool $dryRun = false, ?array $rawTabs = null): ImportReport
+    public function run(Project $project, bool $dryRun = false, ?array $rawTabs = null, ?ImportBatch $existingBatch = null): ImportReport
     {
         $this->project = $project;
         $this->dryRun = $dryRun;
@@ -139,7 +139,7 @@ class ProjectImporter
         $this->stats['started_at'] = $started->toIso8601String();
 
         if (! $dryRun) {
-            $this->batch = ImportBatch::create([
+            $this->batch = $existingBatch ?? ImportBatch::create([
                 'project_id' => $project->id,
                 'mode' => 'apply',
                 'source' => $this->reader->sourceLabel(),
@@ -147,6 +147,7 @@ class ProjectImporter
                 'spreadsheet_id' => $project->spreadsheet_id,
                 'started_at' => $started,
             ]);
+            $this->batch->update(['status' => 'running', 'started_at' => $started]);
         }
 
         $connection = DB::connection();

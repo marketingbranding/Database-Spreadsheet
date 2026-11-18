@@ -21,11 +21,6 @@
         <span>Cari</span>
         <input type="search" name="q" value="{{ $search }}" placeholder="Kavling, konsumen, ID transaksi" aria-label="Cari booking">
     </label>
-
-    <div class="filter-actions">
-        <button type="submit" class="btn">Terapkan</button>
-        <a class="btn btn--secondary" href="{{ route('bookings.index') }}">Reset</a>
-    </div>
 </form>
 
 <div class="card">

@@ -75,6 +75,8 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/reconciliation/{project}', [ReconciliationController::class, 'show'])->name('reconciliation.show');
 
     Route::get('/imports', [ImportController::class, 'index'])->name('imports.index');
+    Route::post('/imports/dry-run', [ImportController::class, 'dryRun'])->name('imports.dry-run');
+    Route::post('/imports/apply', [ImportController::class, 'apply'])->name('imports.apply');
     Route::get('/imports/{batch}', [ImportController::class, 'show'])->name('imports.show');
 
     Route::get('/projects/{project}/import-conflicts', [ImportConflictController::class, 'index'])->name('import-conflicts.index');
