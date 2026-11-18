@@ -3,12 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\LotAllocationConflict;
+use App\Http\Controllers\Concerns\BuildsStageHistory;
 use App\Http\Requests\BookingDecisionRequest;
 use App\Http\Requests\StorePsjbRequest;
 use App\Models\Booking;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\Operations\PsjbWorkflow;
+use App\Services\Operations\StageQueue;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,7 +18,43 @@ use Illuminate\Validation\ValidationException;
 
 class PsjbController extends Controller
 {
-    public function __construct(private readonly PsjbWorkflow $workflow) {}
+    use BuildsStageHistory;
+
+    public function __construct(private readonly PsjbWorkflow $workflow, private readonly StageQueue $stageQueue) {}
+
+    public function index(Request $request, Project $project): View
+    {
+        $this->authorizeStage($request, $project);
+
+        $tab = $request->query('tab') === 'riwayat' ? 'riwayat' : 'antrean';
+        $canViewConflicts = (bool) config('marison.import_conflicts_enabled') && $project->isOperationalStaging();
+        $queue = $tab === 'antrean' ? $this->stageQueue->psjbQueue($project)->get() : collect();
+
+        return view('psjb.index', [
+            'project' => $project,
+            'tab' => $tab,
+            'bookings' => $queue,
+            'history' => $tab === 'riwayat' ? $this->stageHistory($project, 'psjb') : null,
+            'canCreatePsjb' => $this->canCreatePsjb($request),
+            'canViewConflicts' => $canViewConflicts,
+            'blocked' => $queue->mapWithKeys(fn ($booking) => [
+                $booking->id => $this->stageQueue->blockReason($request->user(), $booking, $canViewConflicts, $this->workflow),
+            ]),
+        ]);
+    }
+
+    private function canCreatePsjb(Request $request): bool
+    {
+        return $request->user()->role === User::ROLE_BRANCH_ADMIN
+            && config('app.env') === 'staging'
+            && filter_var(env('MARISON_OPERATIONAL_WRITES', false), FILTER_VALIDATE_BOOL);
+    }
+
+    private function authorizeStage(Request $request, Project $project): void
+    {
+        abort_unless($request->user()->canAccessProject($project), 403);
+        abort_unless($project->isOperationalStaging(), 403, 'Tahapan operasional belum aktif untuk proyek ini.');
+    }
 
     public function create(Request $request, Project $project): View
     {

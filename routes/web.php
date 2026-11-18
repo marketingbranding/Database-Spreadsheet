@@ -1,11 +1,11 @@
 <?php
 
+use App\Http\Controllers\AkadController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\BastController;
-use App\Http\Controllers\AkadController;
 use App\Http\Controllers\BiCheckController;
-use App\Http\Controllers\BookingController;
 use App\Http\Controllers\BookingChangeController;
+use App\Http\Controllers\BookingController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImportConflictController;
 use App\Http\Controllers\ImportController;
@@ -34,6 +34,7 @@ Route::middleware(['auth', 'active'])->group(function () {
 
     Route::get('/projects', [ProjectController::class, 'index'])->name('projects.index');
     Route::get('/projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
+    Route::get('/projects/{project}/psjb', [PsjbController::class, 'index'])->name('psjb.index');
     Route::get('/projects/{project}/psjb/create', [PsjbController::class, 'create'])->name('psjb.create');
     Route::post('/projects/{project}/psjb', [PsjbController::class, 'store'])->name('psjb.store');
     Route::get('/projects/{project}/bi-checking', [BiCheckController::class, 'index'])->name('bi.index');
